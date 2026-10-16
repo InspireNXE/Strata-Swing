@@ -10,13 +10,22 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 
 /**
- * Maps AWT key codes, buttons and modifier masks to Strata's.
+ * Maps AWT key codes, mouse buttons and modifier masks to Strata's input types.
+ *
+ * <p>AWT's Meta modifier (Command on macOS) maps to {@link Modifier#SUPER}, and AltGr counts as
+ * {@link Modifier#ALT}. Keys AWT reports on the right side or the keypad map to Strata's right and keypad keys.</p>
  */
 public final class SwingInput {
 
     private SwingInput() {
     }
 
+    /**
+     * Reads the modifiers held during an AWT input event.
+     *
+     * @param event the event
+     * @return the held modifiers
+     */
     public static Modifiers modifiers(final InputEvent event) {
         final int ex = event.getModifiersEx();
         Modifiers modifiers = Modifiers.NONE;
@@ -35,6 +44,12 @@ public final class SwingInput {
         return modifiers;
     }
 
+    /**
+     * Maps the button of an AWT mouse event.
+     *
+     * @param event the event
+     * @return the button; buttons 4 and 5 are back and forward, anything else unknown
+     */
     public static MouseButton button(final MouseEvent event) {
         return switch (event.getButton()) {
             case MouseEvent.BUTTON1 -> MouseButton.LEFT;
@@ -46,6 +61,12 @@ public final class SwingInput {
         };
     }
 
+    /**
+     * Maps the key of an AWT key event, using its key code and location.
+     *
+     * @param event a key-pressed or key-released event
+     * @return the key, or {@link Key#UNKNOWN} for keys Strata has no constant for
+     */
     public static Key key(final KeyEvent event) {
         final boolean right = event.getKeyLocation() == KeyEvent.KEY_LOCATION_RIGHT;
         final boolean numpad = event.getKeyLocation() == KeyEvent.KEY_LOCATION_NUMPAD;

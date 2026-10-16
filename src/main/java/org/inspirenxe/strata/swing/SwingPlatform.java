@@ -1,6 +1,5 @@
 package org.inspirenxe.strata.swing;
 
-import org.inspirenxe.strata.api.text.TextMetrics;
 import org.inspirenxe.strata.spi.Capabilities;
 import org.inspirenxe.strata.spi.Clipboard;
 import org.inspirenxe.strata.spi.Clock;
@@ -16,26 +15,37 @@ import java.io.IOException;
 import java.util.Optional;
 
 /**
- * The Swing side of the SPI. AWT delivers key repeats itself; {@link StrataPanel} tells repeats from presses.
+ * The Swing {@link Platform}.
+ *
+ * <ul>
+ *     <li>Text is measured with the given {@link SwingTextMetrics}, which the canvas also draws with.</li>
+ *     <li>The clipboard is the system clipboard. In a headless JVM there is none, and the clipboard is
+ *     {@link Clipboard#NONE}.</li>
+ *     <li>The clock is {@link Clock#SYSTEM}.</li>
+ *     <li>AWT delivers typed characters without being told, so text input needs no signal.</li>
+ *     <li>AWT reports held keys as repeated presses, which {@link StrataPanel} turns into repeats, so
+ *     {@link Capabilities#sendsKeyRepeat()} is true.</li>
+ * </ul>
  */
 public final class SwingPlatform implements Platform {
     private static final Capabilities CAPABILITIES = new Capabilities(true);
 
-    private final SwingFonts fonts;
+    private final SwingTextMetrics textMetrics;
     private final Clipboard clipboard;
 
-    public SwingPlatform(final SwingFonts fonts) {
-        this.fonts = fonts;
+    /**
+     * Creates the platform.
+     *
+     * @param textMetrics the fonts to measure and draw text with
+     */
+    public SwingPlatform(final SwingTextMetrics textMetrics) {
+        this.textMetrics = textMetrics;
         this.clipboard = GraphicsEnvironment.isHeadless() ? Clipboard.NONE : new SystemClipboard();
     }
 
-    public SwingFonts fonts() {
-        return this.fonts;
-    }
-
     @Override
-    public TextMetrics textMetrics() {
-        return this.fonts;
+    public SwingTextMetrics textMetrics() {
+        return this.textMetrics;
     }
 
     @Override
@@ -58,6 +68,10 @@ public final class SwingPlatform implements Platform {
         return CAPABILITIES;
     }
 
+    /**
+     * The system clipboard. Reads and writes that fail (another program holds the clipboard, or it holds no text)
+     * read as empty and are dropped.
+     */
     private static final class SystemClipboard implements Clipboard {
         @Override
         public Optional<String> get() {

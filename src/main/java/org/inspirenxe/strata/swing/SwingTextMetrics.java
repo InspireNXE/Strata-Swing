@@ -13,13 +13,23 @@ import java.util.EnumMap;
 import java.util.Map;
 
 /**
- * Picks AWT fonts for text styles and measures text with them.
+ * Picks AWT fonts for text styles and measures text with them, for the Swing {@link TextMetrics}.
+ *
+ * <p>One base font is derived into plain, bold, italic and bold italic. Widths are advance widths with fractional
+ * metrics and antialiasing on, the same settings {@link StrataPanel} and {@link SwingSnapshot} draw with. Underline,
+ * strikethrough and shadow do not change widths. The line height is the font's height (ascent, descent and
+ * leading).</p>
  */
-public final class SwingFonts implements TextMetrics {
+public final class SwingTextMetrics implements TextMetrics {
     private final Map<Variant, Font> fonts;
     private final Map<Variant, FontMetrics> metrics;
 
-    public SwingFonts(final Font base) {
+    /**
+     * Creates metrics for a base font. Its size is in UI units.
+     *
+     * @param base the plain font; bold and italic variants are derived from it
+     */
+    public SwingTextMetrics(final Font base) {
         this.fonts = new EnumMap<>(Variant.class);
         this.metrics = new EnumMap<>(Variant.class);
 
@@ -34,14 +44,31 @@ public final class SwingFonts implements TextMetrics {
         scratch.dispose();
     }
 
-    public static SwingFonts defaults() {
-        return new SwingFonts(new Font(Font.DIALOG, Font.PLAIN, 9));
+    /**
+     * Returns metrics for the logical Dialog font at 9 units, close to Minecraft's font size.
+     *
+     * @return the default metrics
+     */
+    public static SwingTextMetrics defaults() {
+        return new SwingTextMetrics(new Font(Font.DIALOG, Font.PLAIN, 9));
     }
 
+    /**
+     * Returns the AWT font for a style.
+     *
+     * @param style the style; only bold and italic matter
+     * @return the font
+     */
     public Font font(final TextStyle style) {
         return this.fonts.get(Variant.of(style));
     }
 
+    /**
+     * Returns the AWT metrics for a style.
+     *
+     * @param style the style; only bold and italic matter
+     * @return the font metrics
+     */
     public FontMetrics metrics(final TextStyle style) {
         return this.metrics.get(Variant.of(style));
     }
