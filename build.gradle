@@ -1,0 +1,11 @@
+plugins {
+    id 'strata-java'
+}
+
+description = 'Java2D/Swing adapter for Strata.'
+
+dependencies {
+    api(project(':api'))
+    api(project(':spi'))
+    implementation(project(':core'))
+}
