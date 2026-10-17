@@ -241,7 +241,7 @@ public final class SwingCanvas implements Canvas {
     }
 
     /**
-     * Multiplies every pixel's channels by the tint's, the way a tinted sprite draws in Minecraft.
+     * Multiplies every pixel's channels by the tint's.
      */
     private static BufferedImage tint(final BufferedImage source, final int tint) {
         final int ta = tint >>> 24;
@@ -275,7 +275,7 @@ public final class SwingCanvas implements Canvas {
     }
 
     /**
-     * A quarter-brightness copy of the color, as Minecraft draws text shadows.
+     * A quarter-brightness copy of the color, for text shadows.
      */
     private static int shadowOf(final int argb) {
         final int rgb = (argb & 0xFCFCFC) >> 2;

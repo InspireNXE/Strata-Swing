@@ -36,7 +36,7 @@ class SwingCanvasTest {
 
     @BeforeAll
     static void writeSprites() throws IOException {
-        final Path dir = assets.resolve("assets/test/textures/gui/sprites");
+        final Path dir = assets.resolve("assets/test/sprites");
         Files.createDirectories(dir);
 
         final BufferedImage white = new BufferedImage(4, 4, BufferedImage.TYPE_INT_ARGB);

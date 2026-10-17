@@ -45,7 +45,7 @@ public final class SwingTextMetrics implements TextMetrics {
     }
 
     /**
-     * Returns metrics for the logical Dialog font at 9 units, close to Minecraft's font size.
+     * Returns metrics for the logical Dialog font at 9 units.
      *
      * @return the default metrics
      */

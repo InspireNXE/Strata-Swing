@@ -37,7 +37,7 @@ import javax.swing.Timer;
  *
  * <p>How Swing maps onto Strata:</p>
  * <ul>
- *     <li>One UI unit is {@code scale} pixels, like Minecraft's GUI scale. Drawing is scaled up and pointer positions
+ *     <li>One UI unit is {@code scale} pixels. Drawing is scaled up and pointer positions
  *     scaled down by the same factor.</li>
  *     <li>The panel repaints about 60 times a second while it is shown.</li>
  *     <li>It takes keyboard focus when clicked, and turns off Swing's own Tab handling so Strata's tab order
@@ -68,20 +68,35 @@ public final class StrataPanel extends JPanel {
     private char pendingHighSurrogate;
 
     /**
-     * Creates a panel with an empty screen stack.
+     * Creates a panel with an empty screen stack. Sprites load from this class's class loader with
+     * {@link SpriteResolver#DEFAULT}.
      *
      * @param platform the Swing platform; its text metrics also draw the text
      * @param theme the theme for every screen
      * @param scale pixels per UI unit, positive
      * @throws IllegalArgumentException if {@code scale} is not positive
      */
-    @SuppressWarnings("this-escape")
     public StrataPanel(final SwingPlatform platform, final Theme theme, final float scale) {
+        this(platform, theme, scale, new SwingSprites(StrataPanel.class.getClassLoader()));
+    }
+
+    /**
+     * Creates a panel with an empty screen stack.
+     *
+     * @param platform the Swing platform; its text metrics also draw the text
+     * @param theme the theme for every screen
+     * @param scale pixels per UI unit, positive
+     * @param sprites where sprite images come from
+     * @throws IllegalArgumentException if {@code scale} is not positive
+     */
+    @SuppressWarnings("this-escape")
+    public StrataPanel(final SwingPlatform platform, final Theme theme, final float scale,
+                       final SwingSprites sprites) {
         if (!(scale > 0f)) {
             throw new IllegalArgumentException("Scale must be positive: " + scale);
         }
         this.screens = StrataCore.createScreenStack(platform, theme);
-        this.canvas = new SwingCanvas(platform.textMetrics(), new SwingSprites(StrataPanel.class.getClassLoader()));
+        this.canvas = new SwingCanvas(platform.textMetrics(), sprites);
         this.heldKeys = new HeldKeys();
         this.repaintTimer = new Timer(16, event -> this.repaint());
         this.scale = scale;

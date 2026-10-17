@@ -28,7 +28,7 @@ public final class SwingSnapshot {
      * @param theme the theme to render it with
      * @param width the image width in pixels
      * @param height the image height in pixels
-     * @param scale pixels per UI unit, like Minecraft's GUI scale; the screen gets {@code width / scale} by
+     * @param scale pixels per UI unit, the screen gets {@code width / scale} by
      *     {@code height / scale} units
      * @return a new ARGB image of the frame
      * @throws org.inspirenxe.strata.api.theme.ThemeException if the theme lacks a style key the screen's tree
@@ -56,6 +56,28 @@ public final class SwingSnapshot {
      */
     public static BufferedImage render(final Screen screen, final Theme theme, final int width, final int height,
                                        final float scale, final Consumer<ScreenStack> input) {
+        return render(screen, theme, width, height, scale, new SwingSprites(SwingSnapshot.class.getClassLoader()),
+            input);
+    }
+
+    /**
+     * Opens a screen on a fresh screen stack, feeds it input, draws one frame with the given sprites, and closes it
+     * again. Everything else is as in {@link #render(Screen, Theme, int, int, float, Consumer)}.
+     *
+     * @param screen the screen to render
+     * @param theme the theme to render it with
+     * @param width the image width in pixels
+     * @param height the image height in pixels
+     * @param scale pixels per UI unit
+     * @param sprites where sprite images come from
+     * @param input sends input to the stack, in UI units, after the screen opens and before the frame is drawn
+     * @return a new ARGB image of the frame
+     * @throws org.inspirenxe.strata.api.theme.ThemeException if the theme lacks a style key the screen's tree
+     *     requires
+     */
+    public static BufferedImage render(final Screen screen, final Theme theme, final int width, final int height,
+                                       final float scale, final SwingSprites sprites,
+                                       final Consumer<ScreenStack> input) {
         final SwingPlatform platform = new SwingPlatform(SwingTextMetrics.defaults());
         final ScreenStack screens = StrataCore.createScreenStack(platform, theme);
         screens.resize(width / scale, height / scale);
@@ -68,7 +90,7 @@ public final class SwingSnapshot {
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
             g.scale(scale, scale);
-            final SwingCanvas canvas = new SwingCanvas(platform.textMetrics(), new SwingSprites(SwingSnapshot.class.getClassLoader()));
+            final SwingCanvas canvas = new SwingCanvas(platform.textMetrics(), sprites);
             canvas.begin(g);
             screens.render(canvas);
         } finally {

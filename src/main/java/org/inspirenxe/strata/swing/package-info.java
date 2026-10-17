@@ -7,8 +7,8 @@
  * {@link org.inspirenxe.strata.swing.SwingPlatform} and {@link org.inspirenxe.strata.swing.SwingCanvas}, with
  * {@link org.inspirenxe.strata.swing.SwingInput} to translate AWT key and button codes.</p>
  *
- * <p>Sprites load from {@code assets/<namespace>/textures/gui/sprites/<path>.png} on the class path, the layout
- * Minecraft uses, so one set of images serves both adapters.</p>
+ * <p>Sprites load from the class path, at {@code assets/<namespace>/sprites/<path>.png} unless a
+ * {@link org.inspirenxe.strata.swing.SpriteResolver} names another place.</p>
  *
  * <p>Like Swing itself, every class here must be used on the Swing event thread.</p>
  */

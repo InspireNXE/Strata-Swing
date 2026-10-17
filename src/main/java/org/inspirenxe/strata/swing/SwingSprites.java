@@ -11,22 +11,33 @@ import java.util.Optional;
 import javax.imageio.ImageIO;
 
 /**
- * Loads sprites for the Swing canvas from the classpath, at
- * {@code assets/<namespace>/textures/gui/sprites/<path>.png}. That is the layout Minecraft's gui atlas reads, so one
- * set of theme images serves both adapters. Images are loaded once and cached, including the fact that one is
- * missing.
+ * Loads sprites for the Swing canvas from the class path, at the resource a {@link SpriteResolver} names
+ * ({@link SpriteResolver#DEFAULT} unless one is given). Images are loaded once and cached, including the fact that
+ * one is missing.
  */
 public final class SwingSprites {
     private final ClassLoader loader;
+    private final SpriteResolver resolver;
     private final Map<SpriteId, Optional<BufferedImage>> cache;
+
+    /**
+     * Creates a loader that uses {@link SpriteResolver#DEFAULT}.
+     *
+     * @param loader the class loader to find images with
+     */
+    public SwingSprites(final ClassLoader loader) {
+        this(loader, SpriteResolver.DEFAULT);
+    }
 
     /**
      * Creates a loader.
      *
      * @param loader the class loader to find images with
+     * @param resolver where each sprite's image lives on the class path
      */
-    public SwingSprites(final ClassLoader loader) {
+    public SwingSprites(final ClassLoader loader, final SpriteResolver resolver) {
         this.loader = loader;
+        this.resolver = resolver;
         this.cache = new HashMap<>();
     }
 
@@ -41,7 +52,7 @@ public final class SwingSprites {
     }
 
     private Optional<BufferedImage> load(final SpriteId sprite) {
-        final String path = "assets/" + sprite.namespace() + "/textures/gui/sprites/" + sprite.path() + ".png";
+        final String path = this.resolver.resourcePath(sprite);
         try (InputStream in = this.loader.getResourceAsStream(path)) {
             return in == null ? Optional.empty() : Optional.ofNullable(ImageIO.read(in));
         } catch (final IOException e) {
