@@ -6,6 +6,7 @@ import org.inspirenxe.strata.api.geom.Rect;
 import org.inspirenxe.strata.api.text.TextSpan;
 import org.inspirenxe.strata.api.text.TextStyle;
 import org.inspirenxe.strata.api.theme.SpriteId;
+import org.inspirenxe.strata.api.visual.Visual;
 import org.inspirenxe.strata.spi.Canvas;
 
 import java.awt.Color;
@@ -31,6 +32,9 @@ import java.util.Optional;
  *     sprite and tint.</li>
  *     <li>A nine-slice shrinks its borders to fit a rectangle smaller than them.</li>
  *     <li>A missing sprite draws as magenta, so it shows on screen.</li>
+ *     <li>Visuals made by {@link SwingVisuals} draw their image stretched over the rectangle; any other visual draws
+ *     as magenta. A tinted visual is recolored on every draw, without a cache.</li>
+ *     <li>Scales go through {@link Graphics2D#scale}, so text, clips and images scale with the rest.</li>
  *     <li>{@link #nextLayer()} does nothing, since Java2D already draws in order.</li>
  *     <li>The requested cursor is kept for the host component to apply after the frame; see
  *     {@link #requestedCursor()}.</li>
@@ -196,8 +200,26 @@ public final class SwingCanvas implements Canvas {
     }
 
     @Override
+    public void pushScale(final float scale) {
+        this.transforms.push(this.graphics.getTransform());
+        this.graphics.scale(scale, scale);
+    }
+
+    @Override
     public void popTransform() {
         this.graphics.setTransform(this.transforms.pop());
+    }
+
+    @Override
+    public void visual(final Visual visual, final Rect rect, final int tint) {
+        if (!(visual instanceof SwingVisuals.ImageVisual image)) {
+            this.fill(rect, MISSING_SPRITE_COLOR);
+            return;
+        }
+        final BufferedImage img = tint == 0xFFFFFFFF ? image.image() : tint(image.image(), tint);
+        this.graphics.drawImage(img,
+                round(rect.x()), round(rect.y()), round(rect.right()), round(rect.bottom()),
+                0, 0, img.getWidth(), img.getHeight(), null);
     }
 
     @Override
