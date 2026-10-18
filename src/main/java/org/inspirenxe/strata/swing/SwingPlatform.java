@@ -5,6 +5,7 @@ import org.inspirenxe.strata.spi.Clipboard;
 import org.inspirenxe.strata.spi.Clock;
 import org.inspirenxe.strata.spi.Platform;
 import org.inspirenxe.strata.spi.TextInputSink;
+import org.inspirenxe.strata.spi.ThemeSource;
 
 import java.awt.GraphicsEnvironment;
 import java.awt.Toolkit;
@@ -12,6 +13,7 @@ import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
 import java.awt.datatransfer.UnsupportedFlavorException;
 import java.io.IOException;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -25,6 +27,8 @@ import java.util.Optional;
  *     <li>AWT delivers typed characters without being told, so text input needs no signal.</li>
  *     <li>AWT reports held keys as repeated presses, which {@link StrataPanel} turns into repeats, so
  *     {@link Capabilities#sendsKeyRepeat()} is true.</li>
+ *     <li>Themes named by id come from a {@link SwingThemeSource}, which reads theme files from the class
+ *     path.</li>
  * </ul>
  */
 public final class SwingPlatform implements Platform {
@@ -32,15 +36,32 @@ public final class SwingPlatform implements Platform {
 
     private final SwingTextMetrics textMetrics;
     private final Clipboard clipboard;
+    private final ThemeSource themes;
+
+    /**
+     * Creates the platform with a {@link SwingThemeSource} on this class's class loader.
+     *
+     * @param textMetrics the fonts to measure and draw text with
+     */
+    public SwingPlatform(final SwingTextMetrics textMetrics) {
+        this(textMetrics, new SwingThemeSource(SwingPlatform.class.getClassLoader()));
+    }
 
     /**
      * Creates the platform.
      *
      * @param textMetrics the fonts to measure and draw text with
+     * @param themes where themes named by id come from
      */
-    public SwingPlatform(final SwingTextMetrics textMetrics) {
+    public SwingPlatform(final SwingTextMetrics textMetrics, final ThemeSource themes) {
         this.textMetrics = textMetrics;
+        this.themes = Objects.requireNonNull(themes, "themes");
         this.clipboard = GraphicsEnvironment.isHeadless() ? Clipboard.NONE : new SystemClipboard();
+    }
+
+    @Override
+    public ThemeSource themes() {
+        return this.themes;
     }
 
     @Override
