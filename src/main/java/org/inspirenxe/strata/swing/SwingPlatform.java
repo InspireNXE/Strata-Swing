@@ -47,7 +47,7 @@ import java.util.Optional;
  * </ul>
  */
 public final class SwingPlatform implements Platform {
-    private static final Capabilities CAPABILITIES = new Capabilities(true);
+    private static final Capabilities CAPABILITIES = new Capabilities(true, true);
 
     private final SwingTextMetrics textMetrics;
     private final Clipboard clipboard;

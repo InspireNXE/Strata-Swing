@@ -23,6 +23,8 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.font.FontRenderContext;
+import java.awt.font.TextLayout;
 import java.awt.image.BufferedImage;
 import java.util.EnumMap;
 import java.util.Map;
@@ -30,21 +32,34 @@ import java.util.Map;
 /**
  * Picks AWT fonts for text styles and measures text with them, for the Swing {@link TextMetrics}.
  *
- * <p>One base font is derived into plain, bold, italic and bold italic. Widths are advance widths with fractional
- * metrics and antialiasing on, the same settings {@link StrataPanel} and {@link SwingSnapshot} draw with. Underline,
+ * <p>One base font is derived into plain, bold, italic and bold italic, and a monospaced font the same way for
+ * {@linkplain TextStyle#monospace() monospaced} styles. Widths are the advances of a {@link TextLayout} made with
+ * fractional metrics and antialiasing on, and {@link SwingCanvas} draws the same layout, so text measures exactly
+ * as wide as it draws and spans placed side by side meet without gaps or overlaps. Underline,
  * strikethrough and shadow do not change widths. The line height is the font's height (ascent, descent and
  * leading).</p>
  */
 public final class SwingTextMetrics implements TextMetrics {
     private final Map<Variant, Font> fonts;
     private final Map<Variant, FontMetrics> metrics;
+    private final FontRenderContext context;
 
     /**
-     * Creates metrics for a base font. Its size is in UI units.
+     * Creates metrics for a base font and the logical Monospaced font at the same size. Sizes are in UI units.
      *
      * @param base the plain font; bold and italic variants are derived from it
      */
     public SwingTextMetrics(final Font base) {
+        this(base, new Font(Font.MONOSPACED, Font.PLAIN, base.getSize()).deriveFont(base.getSize2D()));
+    }
+
+    /**
+     * Creates metrics for a base font and a monospaced font. Sizes are in UI units.
+     *
+     * @param base the plain font; bold and italic variants are derived from it
+     * @param monospace the plain monospaced font, used for monospaced styles; its variants are derived the same way
+     */
+    public SwingTextMetrics(final Font base, final Font monospace) {
         this.fonts = new EnumMap<>(Variant.class);
         this.metrics = new EnumMap<>(Variant.class);
 
@@ -52,10 +67,11 @@ public final class SwingTextMetrics implements TextMetrics {
         scratch.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         scratch.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
         for (final Variant variant : Variant.values()) {
-            final Font font = base.deriveFont(variant.awtStyle);
+            final Font font = (variant.monospace ? monospace : base).deriveFont(variant.awtStyle);
             this.fonts.put(variant, font);
             this.metrics.put(variant, scratch.getFontMetrics(font));
         }
+        this.context = scratch.getFontRenderContext();
         scratch.dispose();
     }
 
@@ -71,7 +87,7 @@ public final class SwingTextMetrics implements TextMetrics {
     /**
      * Returns the AWT font for a style.
      *
-     * @param style the style; only bold and italic matter
+     * @param style the style; only bold, italic and monospace matter
      * @return the font
      */
     public Font font(final TextStyle style) {
@@ -81,16 +97,28 @@ public final class SwingTextMetrics implements TextMetrics {
     /**
      * Returns the AWT metrics for a style.
      *
-     * @param style the style; only bold and italic matter
+     * @param style the style; only bold, italic and monospace matter
      * @return the font metrics
      */
     public FontMetrics metrics(final TextStyle style) {
         return this.metrics.get(Variant.of(style));
     }
 
+    /**
+     * Lays out a span for drawing: the glyphs and their positions in UI units, at the settings widths are measured
+     * with.
+     *
+     * @param span the span; must not be empty
+     * @return the layout
+     */
+    public TextLayout layout(final TextSpan span) {
+        return new TextLayout(span.text(), this.font(span.style()), this.context);
+    }
+
     @Override
     public float width(final TextSpan span) {
-        return (float) this.metrics(span.style()).getStringBounds(span.text(), null).getWidth();
+        // FontMetrics rounds each character's advance; a layout keeps the fractional advances text is drawn with
+        return span.text().isEmpty() ? 0f : this.layout(span).getAdvance();
     }
 
     @Override
@@ -99,22 +127,28 @@ public final class SwingTextMetrics implements TextMetrics {
     }
 
     private enum Variant {
-        PLAIN(Font.PLAIN),
-        BOLD(Font.BOLD),
-        ITALIC(Font.ITALIC),
-        BOLD_ITALIC(Font.BOLD | Font.ITALIC);
+        PLAIN(Font.PLAIN, false),
+        BOLD(Font.BOLD, false),
+        ITALIC(Font.ITALIC, false),
+        BOLD_ITALIC(Font.BOLD | Font.ITALIC, false),
+        MONO_PLAIN(Font.PLAIN, true),
+        MONO_BOLD(Font.BOLD, true),
+        MONO_ITALIC(Font.ITALIC, true),
+        MONO_BOLD_ITALIC(Font.BOLD | Font.ITALIC, true);
 
         private final int awtStyle;
+        private final boolean monospace;
 
-        Variant(final int awtStyle) {
+        Variant(final int awtStyle, final boolean monospace) {
             this.awtStyle = awtStyle;
+            this.monospace = monospace;
         }
 
         static Variant of(final TextStyle style) {
-            if (style.bold()) {
-                return style.italic() ? BOLD_ITALIC : BOLD;
-            }
-            return style.italic() ? ITALIC : PLAIN;
+            final int index = (style.bold() ? 1 : 0) + (style.italic() ? 2 : 0) + (style.monospace() ? 4 : 0);
+            return VALUES[index];
         }
+
+        private static final Variant[] VALUES = values();
     }
 }

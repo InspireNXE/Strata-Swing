@@ -28,6 +28,7 @@ import java.awt.Color;
 import java.awt.GradientPaint;
 import java.awt.Graphics2D;
 import java.awt.Shape;
+import java.awt.font.TextLayout;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
@@ -178,12 +179,14 @@ public final class SwingCanvas implements Canvas {
         this.graphics.setFont(this.fonts.font(style));
         final float baseline = y + this.fonts.metrics(style).getAscent();
 
+        // Draw the layout the width was measured from, so spans side by side meet exactly
+        final TextLayout layout = this.fonts.layout(span);
         if (style.shadow()) {
             this.graphics.setColor(new Color(shadowOf(style.color()), true));
-            this.graphics.drawString(span.text(), x + 1f, baseline + 1f);
+            layout.draw(this.graphics, x + 1f, baseline + 1f);
         }
         this.graphics.setColor(new Color(style.color(), true));
-        this.graphics.drawString(span.text(), x, baseline);
+        layout.draw(this.graphics, x, baseline);
 
         if (style.underline() || style.strikethrough()) {
             final float width = this.fonts.width(span);
