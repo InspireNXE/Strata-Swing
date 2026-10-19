@@ -103,7 +103,8 @@ class StrataPanelTest {
     @Test
     void clickAtScaledPositionPressesTheButton() {
         final int[] presses = {0};
-        this.show(factory -> factory.absolutePanel().add(factory.button("Go").onAction(() -> presses[0]++), 5, 5));
+        this.show(factory -> factory.absolutePanel()
+                .add(factory.button("Go").onEvent(Button.PRESSED, event -> presses[0]++), 5, 5));
 
         this.click(20, 20);
         assertEquals(1, presses[0], "AWT (20, 20) is UI (10, 10), inside the button");
@@ -117,7 +118,7 @@ class StrataPanelTest {
         final List<KeyAction> actions = new ArrayList<>();
         this.show(factory -> {
             final Button button = factory.button("Focus me");
-            button.on(EventTypes.KEY, event -> actions.add(event.action()));
+            button.onEvent(EventTypes.KEY, event -> actions.add(event.action()));
             return factory.absolutePanel().add(button);
         });
         this.click(10, 10);
@@ -157,7 +158,7 @@ class StrataPanelTest {
         this.show(factory -> {
             final AbsolutePanel area = factory.absolutePanel();
             area.setAnchor(org.inspirenxe.strata.api.layout.Anchor.FILL);
-            area.on(EventTypes.SCROLL, event -> scrolls.add(new float[] {event.scrollX(), event.scrollY()}));
+            area.onEvent(EventTypes.SCROLL, event -> scrolls.add(new float[] {event.scrollX(), event.scrollY()}));
             return area;
         });
 
