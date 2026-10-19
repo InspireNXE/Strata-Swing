@@ -16,3 +16,7 @@ The adapter builds against the Strata checkout beside it at `../Strata`, includi
 ```bash
 ./gradlew build
 ```
+
+## License
+
+Strata Swing is released under the Apache License, Version 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
