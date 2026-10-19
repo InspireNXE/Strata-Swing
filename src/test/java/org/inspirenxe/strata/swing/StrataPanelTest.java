@@ -4,7 +4,7 @@ import org.inspirenxe.strata.api.ComponentFactory;
 import org.inspirenxe.strata.api.component.Component;
 import org.inspirenxe.strata.api.control.button.Button;
 import org.inspirenxe.strata.api.control.field.TextBox;
-import org.inspirenxe.strata.api.event.EventTypes;
+import org.inspirenxe.strata.api.event.input.InputEvents;
 import org.inspirenxe.strata.api.input.KeyAction;
 import org.inspirenxe.strata.api.layout.AbsolutePanel;
 import org.inspirenxe.strata.api.screen.Screen;
@@ -118,7 +118,7 @@ class StrataPanelTest {
         final List<KeyAction> actions = new ArrayList<>();
         this.show(factory -> {
             final Button button = factory.button("Focus me");
-            button.onEvent(EventTypes.KEY, event -> actions.add(event.action()));
+            button.onEvent(InputEvents.KEY, event -> actions.add(event.action()));
             return factory.absolutePanel().add(button);
         });
         this.click(10, 10);
@@ -158,7 +158,7 @@ class StrataPanelTest {
         this.show(factory -> {
             final AbsolutePanel area = factory.absolutePanel();
             area.setAnchor(org.inspirenxe.strata.api.layout.Anchor.FILL);
-            area.onEvent(EventTypes.SCROLL, event -> scrolls.add(new float[] {event.scrollX(), event.scrollY()}));
+            area.onEvent(InputEvents.SCROLL, event -> scrolls.add(new float[] {event.scrollX(), event.scrollY()}));
             return area;
         });
 

@@ -1,8 +1,8 @@
 package org.inspirenxe.strata.swing;
 
 import org.inspirenxe.strata.api.component.CursorKind;
-import org.inspirenxe.strata.api.geom.Insets;
-import org.inspirenxe.strata.api.geom.Rect;
+import org.inspirenxe.strata.api.geometry.Insets;
+import org.inspirenxe.strata.api.geometry.Rect;
 import org.inspirenxe.strata.api.theme.SpriteId;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;

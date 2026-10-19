@@ -1,6 +1,6 @@
 package org.inspirenxe.strata.swing;
 
-import org.inspirenxe.strata.api.geom.Size;
+import org.inspirenxe.strata.api.geometry.Size;
 import org.inspirenxe.strata.api.visual.Visual;
 
 import java.awt.image.BufferedImage;
