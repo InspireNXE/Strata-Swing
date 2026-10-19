@@ -1,0 +1,21 @@
+plugins {
+    id 'strata-java'
+    id 'strata-documented'
+}
+
+description = 'Java2D/Swing adapter for Strata.'
+
+dependencies {
+    // Apps compile against the API and drive the SPI; the implementation stays hidden from them
+    api("org.inspirenxe:strata-api:${strata_version}")
+    api("org.inspirenxe:strata-spi:${strata_version}")
+    implementation("org.inspirenxe:strata-core:${strata_version}")
+
+    // The SPI contract tests this adapter must pass
+    testImplementation(testFixtures("org.inspirenxe:strata-spi:${strata_version}"))
+}
+
+tasks.named('test', Test) {
+    // Swing tests draw to images and call listeners directly; none needs a display
+    systemProperty('java.awt.headless', 'true')
+}

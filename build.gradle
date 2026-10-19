@@ -1,20 +1,2 @@
-plugins {
-    id 'strata-java'
-    id 'strata-documented'
-}
-
-description = 'Java2D/Swing adapter for Strata.'
-
-dependencies {
-    api(project(':api'))
-    api(project(':spi'))
-    implementation(project(':core'))
-
-    // The SPI contract tests this adapter must pass
-    testImplementation(testFixtures(project(':spi')))
-}
-
-tasks.named('test', Test) {
-    // Swing tests draw to images and call listeners directly; none needs a display
-    systemProperty('java.awt.headless', 'true')
-}
+// The adapter is the canvas-swing project. This root script exists so that IDEs importing the build treat this
+// directory, and not canvas-swing/, as the project's root.
