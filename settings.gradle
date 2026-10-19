@@ -9,7 +9,8 @@ plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }
 
-rootProject.name = 'Strata-Swing'
+// The project name gives the artifact its name, strata-canvas-swing
+rootProject.name = 'canvas-swing'
 // Strata's convention plugins, so the adapter builds and documents itself the same way as the library. Strata
 // includes the same build the same way, so the two share it.
 includeBuild('../Strata/build-logic')
@@ -23,5 +24,3 @@ includeBuild('../Strata') {
     }
 }
 
-// The Java2D/Swing adapter
-include('canvas-swing')
