@@ -48,7 +48,7 @@ import java.util.Objects;
  */
 public final class BitmapFont implements SwingFont {
     /** How many tinted copies of each sheet are kept, most recently used first. */
-    public static final int TINT_CACHE = 32;
+    public static final int TINT_CACHE = 256;
 
     private static final float ITALIC_SLANT = 0.25f;
 
@@ -135,6 +135,7 @@ public final class BitmapFont implements SwingFont {
         final TextStyle style = span.style();
         final String text = span.text();
         final Object interpolation = graphics.getRenderingHint(RenderingHints.KEY_INTERPOLATION);
+        final AffineTransform base = graphics.getTransform();
         graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                 RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
         try {
@@ -145,11 +146,10 @@ public final class BitmapFont implements SwingFont {
                 final Glyph glyph = this.glyphs.get(codePoint);
                 if (glyph != null) {
                     if (glyph.sheet() >= 0) {
-                        final BufferedImage image = this.sheet(glyph.sheet(), argb)
-                                .getSubimage(glyph.x(), glyph.y(), glyph.width(), glyph.height());
-                        this.drawGlyph(graphics, image, glyph, pen, baseline, style.italic());
+                        final BufferedImage sheet = this.sheet(glyph.sheet(), argb);
+                        BitmapFont.drawGlyph(graphics, base, sheet, glyph, pen, baseline, style.italic());
                         if (style.bold()) {
-                            this.drawGlyph(graphics, image, glyph, pen + 1f, baseline, style.italic());
+                            BitmapFont.drawGlyph(graphics, base, sheet, glyph, pen + 1f, baseline, style.italic());
                         }
                     }
                     pen += glyph.advance() + (style.bold() ? 1f : 0f);
@@ -163,21 +163,28 @@ public final class BitmapFont implements SwingFont {
                 }
             }
         } finally {
+            graphics.setTransform(base);
             if (interpolation != null) {
                 graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, interpolation);
             }
         }
     }
 
-    private void drawGlyph(final Graphics2D graphics, final BufferedImage image, final Glyph glyph, final float x,
-                           final float baseline, final boolean italic) {
-        final AffineTransform transform = AffineTransform.getTranslateInstance(x, baseline);
+    /**
+     * Draws a glyph's cell straight from its whole sheet. A sub-image of the sheet would not be kept on the
+     * graphics card, so every glyph would be copied there again on every frame.
+     */
+    private static void drawGlyph(final Graphics2D graphics, final AffineTransform base, final BufferedImage sheet,
+                                  final Glyph glyph, final float x, final float baseline, final boolean italic) {
+        graphics.setTransform(base);
+        graphics.translate(x, baseline);
         if (italic) {
-            transform.shear(-ITALIC_SLANT, 0d);
+            graphics.shear(-ITALIC_SLANT, 0d);
         }
-        transform.translate(0d, -glyph.top());
-        transform.scale(glyph.scale(), glyph.scale());
-        graphics.drawImage(image, transform, null);
+        graphics.translate(0d, -glyph.top());
+        graphics.scale(glyph.scale(), glyph.scale());
+        graphics.drawImage(sheet, 0, 0, glyph.width(), glyph.height(),
+                glyph.x(), glyph.y(), glyph.x() + glyph.width(), glyph.y() + glyph.height(), null);
     }
 
     /**
@@ -208,18 +215,19 @@ public final class BitmapFont implements SwingFont {
         final int tr = (argb >> 16) & 0xFF;
         final int tg = (argb >> 8) & 0xFF;
         final int tb = argb & 0xFF;
-        final BufferedImage result = new BufferedImage(source.getWidth(), source.getHeight(),
-                BufferedImage.TYPE_INT_ARGB);
-        for (int y = 0; y < source.getHeight(); y++) {
-            for (int x = 0; x < source.getWidth(); x++) {
-                final int pixel = source.getRGB(x, y);
-                final int a = (pixel >>> 24) * ta / 255;
-                final int r = ((pixel >> 16) & 0xFF) * tr / 255;
-                final int g = ((pixel >> 8) & 0xFF) * tg / 255;
-                final int b = (pixel & 0xFF) * tb / 255;
-                result.setRGB(x, y, (a << 24) | (r << 16) | (g << 8) | b);
-            }
+        final int width = source.getWidth();
+        final int height = source.getHeight();
+        final int[] pixels = source.getRGB(0, 0, width, height, null, 0, width);
+        for (int i = 0; i < pixels.length; i++) {
+            final int pixel = pixels[i];
+            final int a = (pixel >>> 24) * ta / 255;
+            final int r = ((pixel >> 16) & 0xFF) * tr / 255;
+            final int g = ((pixel >> 8) & 0xFF) * tg / 255;
+            final int b = (pixel & 0xFF) * tb / 255;
+            pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
         }
+        final BufferedImage result = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        result.setRGB(0, 0, width, height, pixels, 0, width);
         return result;
     }
 
