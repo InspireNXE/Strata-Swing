@@ -69,6 +69,7 @@ public final class SwingPlatform implements Platform {
      * @param themes where themes named by id come from
      */
     public SwingPlatform(final SwingTextMetrics textMetrics, final ThemeSource themes) {
+        SwingAppearances.install();
         this.textMetrics = textMetrics;
         this.themes = Objects.requireNonNull(themes, "themes");
         this.clipboard = GraphicsEnvironment.isHeadless() ? Clipboard.NONE : new SystemClipboard();
