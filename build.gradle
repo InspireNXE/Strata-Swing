@@ -5,6 +5,11 @@ plugins {
 
 description = 'Java2D/Swing adapter for Strata.'
 
+base {
+    // The artifact keeps the adapter's name, whatever the repository is called
+    archivesName = 'strata-canvas-swing'
+}
+
 dependencies {
     // Apps compile against the API and drive the SPI; the implementation stays hidden from them
     api("org.inspirenxe:strata-api:${strata_version}")

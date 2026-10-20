@@ -9,8 +9,7 @@ plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }
 
-// The project name gives the artifact its name, strata-canvas-swing
-rootProject.name = 'canvas-swing'
+rootProject.name = 'Strata-Swing'
 // Strata's convention plugins, so the adapter builds and documents itself the same way as the library. Strata
 // includes the same build the same way, so the two share it.
 includeBuild('../Strata/build-logic')
