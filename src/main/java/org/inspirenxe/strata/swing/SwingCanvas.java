@@ -113,7 +113,28 @@ public final class SwingCanvas implements Canvas {
             return;
         }
         this.graphics.setColor(new Color(argb, true));
-        this.graphics.fill(rectangle(rect));
+        this.graphics.fill(this.snapped(rect));
+    }
+
+    /**
+     * Returns the rectangle with each edge moved to the nearest device pixel edge, so fills and clips cover whole
+     * pixels and shapes laid out symmetrically in UI units stay symmetric at any scale. A rotated or sheared transform
+     * gets the rectangle unchanged.
+     */
+    private Shape snapped(final Rect rect) {
+        final AffineTransform transform = this.graphics.getTransform();
+        final double scaleX = transform.getScaleX();
+        final double scaleY = transform.getScaleY();
+        if (transform.getShearX() != 0d || transform.getShearY() != 0d || scaleX == 0d || scaleY == 0d) {
+            return rectangle(rect);
+        }
+        final double translateX = transform.getTranslateX();
+        final double translateY = transform.getTranslateY();
+        final double left = (Math.round(rect.x() * scaleX + translateX) - translateX) / scaleX;
+        final double top = (Math.round(rect.y() * scaleY + translateY) - translateY) / scaleY;
+        final double right = (Math.round(rect.right() * scaleX + translateX) - translateX) / scaleX;
+        final double bottom = (Math.round(rect.bottom() * scaleY + translateY) - translateY) / scaleY;
+        return new Rectangle2D.Double(left, top, right - left, bottom - top);
     }
 
     @Override
@@ -203,7 +224,7 @@ public final class SwingCanvas implements Canvas {
     public void pushClip(final Rect rect) {
         // getClip() is null when nothing clips yet, and ArrayDeque refuses null
         this.clips.add(Optional.ofNullable(this.graphics.getClip()));
-        this.graphics.clip(rectangle(rect));
+        this.graphics.clip(this.snapped(rect));
     }
 
     @Override
