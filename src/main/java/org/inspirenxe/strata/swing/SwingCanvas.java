@@ -47,8 +47,8 @@ import java.util.Optional;
  *     <li>A sprite tint other than opaque white multiplies each pixel's channels; tinted copies are cached per
  *     sprite and tint.</li>
  *     <li>A nine-slice shrinks its borders to fit a rectangle smaller than them. Its border is in the image's
- *     pixels, each drawn one UI unit wide; sized and tiled nine-slices are drawn by the host from sprites, since
- *     Swing stores no slicing with its images.</li>
+ *     pixels, each drawn one UI unit wide; sized and tiled nine-slices are drawn by the host from
+ *     {@link #spriteRegion} calls, since Swing stores no slicing with its images.</li>
  *     <li>Text is drawn with the {@link SwingFont} its style's metrics measured it with, the shadow one unit down
  *     and to the right in a quarter-brightness copy of the color.</li>
  *     <li>A missing sprite draws as magenta, so it shows on screen.</li>
@@ -157,6 +157,28 @@ public final class SwingCanvas implements Canvas {
         }
         final BufferedImage img = image.get();
         this.drawImage(img, rect.x(), rect.y(), rect.right(), rect.bottom(), 0, 0, img.getWidth(), img.getHeight());
+    }
+
+    /**
+     * Draws the part straight from the image, with the part's edges rounded to the nearest image pixel, so pieces
+     * drawn side by side show no pixels from beyond their part at any scale.
+     */
+    @Override
+    public void spriteRegion(final SpriteId sprite, final Rect rect, final float u0, final float v0,
+                             final float u1, final float v1, final int tint) {
+        final Optional<BufferedImage> image = this.image(sprite, tint);
+        if (image.isEmpty()) {
+            this.fill(rect, MISSING_SPRITE_COLOR);
+            return;
+        }
+        final BufferedImage img = image.get();
+        final int w = img.getWidth();
+        final int h = img.getHeight();
+        final int sx0 = Math.clamp(Math.round(u0 * w), 0, w - 1);
+        final int sy0 = Math.clamp(Math.round(v0 * h), 0, h - 1);
+        final int sx1 = Math.clamp(Math.round(u1 * w), sx0 + 1, w);
+        final int sy1 = Math.clamp(Math.round(v1 * h), sy0 + 1, h);
+        this.drawImage(img, rect.x(), rect.y(), rect.right(), rect.bottom(), sx0, sy0, sx1, sy1);
     }
 
     @Override
