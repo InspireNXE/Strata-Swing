@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Finds theme files on the class path at {@code assets/<namespace>/themes/<path>.json}, next to where
- * {@link SpriteResolver#DEFAULT} looks for sprites. Every class path entry that has the file contributes one
+ * {@link SpriteResolver#DEFAULT} looks for sprites, or wherever a {@link ThemePathResolver} says. Every class path entry that has the file contributes one
  * document. An entry earlier on the class path has higher priority, as it does for any other resource.
  *
  * <p>Themes built in code can be registered with {@link #register}. Files are read once per id and cached until
@@ -45,6 +45,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class SwingThemeSource implements ThemeSource {
     private final ClassLoader loader;
+    private final ThemePathResolver resolver;
     private final Map<ThemeId, Theme> bases;
     private final Map<ThemeId, List<ThemeDocument>> cache;
     private final AtomicLong version;
@@ -55,7 +56,18 @@ public final class SwingThemeSource implements ThemeSource {
      * @param loader the class loader to find theme files with
      */
     public SwingThemeSource(final ClassLoader loader) {
+        this(loader, ThemePathResolver.DEFAULT);
+    }
+
+    /**
+     * Creates a source that finds theme files where a resolver says.
+     *
+     * @param loader the class loader to find theme files with
+     * @param resolver where each theme's files live on the class path
+     */
+    public SwingThemeSource(final ClassLoader loader, final ThemePathResolver resolver) {
         this.loader = Objects.requireNonNull(loader, "loader");
+        this.resolver = Objects.requireNonNull(resolver, "resolver");
         this.bases = new HashMap<>();
         this.cache = new HashMap<>();
         this.version = new AtomicLong();
@@ -97,7 +109,7 @@ public final class SwingThemeSource implements ThemeSource {
     }
 
     private List<ThemeDocument> read(final ThemeId id) {
-        final String name = "assets/" + id.namespace() + "/themes/" + id.path() + ".json";
+        final String name = this.resolver.resourcePath(id);
         final List<ThemeDocument> documents = new ArrayList<>();
         try {
             final Enumeration<URL> urls = this.loader.getResources(name);

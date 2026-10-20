@@ -17,6 +17,7 @@ package org.inspirenxe.strata.swing;
 
 import org.inspirenxe.strata.api.screen.Screen;
 import org.inspirenxe.strata.api.theme.Theme;
+import org.inspirenxe.strata.api.theme.ThemeRef;
 import org.inspirenxe.strata.core.StrataCore;
 import org.inspirenxe.strata.spi.ScreenStack;
 
@@ -57,7 +58,8 @@ public final class SwingSnapshot {
     /**
      * Opens a screen on a fresh screen stack, feeds it input, draws one frame, and closes it again. Use it to
      * picture a screen in a state that takes input to reach, such as with a drop-down open or the pointer over a
-     * tooltip. Everything else is as in {@link #render(Screen, Theme, int, int, float)}.
+     * tooltip. Tooltips show without the usual delay. Everything else is as in
+     * {@link #render(Screen, Theme, int, int, float)}.
      *
      * @param screen the screen to render
      * @param theme the theme to render it with
@@ -93,8 +95,63 @@ public final class SwingSnapshot {
     public static BufferedImage render(final Screen screen, final Theme theme, final int width, final int height,
                                        final float scale, final SwingSprites sprites,
                                        final Consumer<ScreenStack> input) {
-        final SwingPlatform platform = new SwingPlatform(SwingTextMetrics.defaults());
-        final ScreenStack screens = StrataCore.createScreenStack(platform, theme);
+        return render(new SwingPlatform(SwingTextMetrics.defaults()), screen, theme, width, height, scale, sprites,
+                input);
+    }
+
+    /**
+     * Opens a screen on a fresh screen stack of a given platform, feeds it input, draws one frame, and closes it
+     * again. Text is measured and drawn with the platform's text metrics. Everything else is as in
+     * {@link #render(Screen, Theme, int, int, float, SwingSprites, Consumer)}.
+     *
+     * @param platform the platform, for its fonts, theme source and the rest
+     * @param screen the screen to render
+     * @param theme the theme to render it with
+     * @param width the image width in pixels
+     * @param height the image height in pixels
+     * @param scale pixels per UI unit
+     * @param sprites where sprite images come from
+     * @param input sends input to the stack, in UI units, after the screen opens and before the frame is drawn
+     * @return a new ARGB image of the frame
+     * @throws org.inspirenxe.strata.api.theme.ThemeException if the theme lacks a style key the screen's tree
+     *     requires
+     */
+    public static BufferedImage render(final SwingPlatform platform, final Screen screen, final Theme theme,
+                                       final int width, final int height, final float scale,
+                                       final SwingSprites sprites, final Consumer<ScreenStack> input) {
+        return draw(platform, StrataCore.createScreenStack(platform, theme), screen, width, height, scale, sprites,
+                input);
+    }
+
+    /**
+     * Opens a screen on a fresh screen stack whose theme is resolved from the platform's theme source, feeds it
+     * input, draws one frame, and closes it again, so a snapshot shows what theme files make of a theme. Everything
+     * else is as in {@link #render(SwingPlatform, Screen, Theme, int, int, float, SwingSprites, Consumer)}.
+     *
+     * @param platform the platform, for its fonts, theme source and the rest
+     * @param screen the screen to render
+     * @param theme the theme to resolve
+     * @param width the image width in pixels
+     * @param height the image height in pixels
+     * @param scale pixels per UI unit
+     * @param sprites where sprite images come from
+     * @param input sends input to the stack, in UI units, after the screen opens and before the frame is drawn
+     * @return a new ARGB image of the frame
+     * @throws org.inspirenxe.strata.api.theme.ThemeException if the theme cannot be resolved or lacks a style key
+     *     the screen's tree requires
+     */
+    public static BufferedImage render(final SwingPlatform platform, final Screen screen, final ThemeRef theme,
+                                       final int width, final int height, final float scale,
+                                       final SwingSprites sprites, final Consumer<ScreenStack> input) {
+        return draw(platform, StrataCore.createScreenStack(platform, theme), screen, width, height, scale, sprites,
+                input);
+    }
+
+    private static BufferedImage draw(final SwingPlatform platform, final ScreenStack screens, final Screen screen,
+                                      final int width, final int height, final float scale,
+                                      final SwingSprites sprites, final Consumer<ScreenStack> input) {
+        // One frame is drawn, so a tooltip the input reaches shows without waiting
+        screens.setTooltipDelay(0L);
         screens.resize(width / scale, height / scale);
         screens.push(screen);
         input.accept(screens);

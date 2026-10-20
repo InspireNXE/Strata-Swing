@@ -28,7 +28,6 @@ import java.awt.Color;
 import java.awt.GradientPaint;
 import java.awt.Graphics2D;
 import java.awt.Shape;
-import java.awt.font.TextLayout;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
@@ -43,10 +42,15 @@ import java.util.Optional;
  *
  * <p>How it meets the canvas contract on Java2D:</p>
  * <ul>
- *     <li>Coordinates stay fractional for fills, clips and text; sprites snap to whole pixels.</li>
+ *     <li>Coordinates stay fractional for text. Fills, clips, sprites and visuals snap each edge to the nearest
+ *     device pixel, so pieces that share an edge meet without gaps or overlaps at any scale.</li>
  *     <li>A sprite tint other than opaque white multiplies each pixel's channels; tinted copies are cached per
  *     sprite and tint.</li>
- *     <li>A nine-slice shrinks its borders to fit a rectangle smaller than them.</li>
+ *     <li>A nine-slice shrinks its borders to fit a rectangle smaller than them. Its border is in the image's
+ *     pixels, each drawn one UI unit wide; sized and tiled nine-slices are drawn by the host from sprites, since
+ *     Swing stores no slicing with its images.</li>
+ *     <li>Text is drawn with the {@link SwingFont} its style's metrics measured it with, the shadow one unit down
+ *     and to the right in a quarter-brightness copy of the color.</li>
  *     <li>A missing sprite draws as magenta, so it shows on screen.</li>
  *     <li>Visuals made by {@link SwingVisuals} draw their image stretched over the rectangle; any other visual draws
  *     as magenta. A tinted visual is recolored on every draw, without a cache.</li>
@@ -65,6 +69,7 @@ public final class SwingCanvas implements Canvas {
 
     private final SwingTextMetrics fonts;
     private final SwingSprites sprites;
+    private long spritesVersion;
     private final Deque<Optional<Shape>> clips;
     private final Deque<AffineTransform> transforms;
     private final Map<TintKey, BufferedImage> tinted;
@@ -151,9 +156,7 @@ public final class SwingCanvas implements Canvas {
             return;
         }
         final BufferedImage img = image.get();
-        this.graphics.drawImage(img,
-                round(rect.x()), round(rect.y()), round(rect.right()), round(rect.bottom()),
-                0, 0, img.getWidth(), img.getHeight(), null);
+        this.drawImage(img, rect.x(), rect.y(), rect.right(), rect.bottom(), 0, 0, img.getWidth(), img.getHeight());
     }
 
     @Override
@@ -175,17 +178,16 @@ public final class SwingCanvas implements Canvas {
         final float horizontal = l + r > rect.width() ? rect.width() / (l + r) : 1f;
         final float vertical = t + b > rect.height() ? rect.height() / (t + b) : 1f;
 
-        final int[] dx = {round(rect.x()), round(rect.x() + l * horizontal), round(rect.right() - r * horizontal), round(rect.right())};
-        final int[] dy = {round(rect.y()), round(rect.y() + t * vertical), round(rect.bottom() - b * vertical), round(rect.bottom())};
+        final float[] dx = {rect.x(), rect.x() + l * horizontal, rect.right() - r * horizontal, rect.right()};
+        final float[] dy = {rect.y(), rect.y() + t * vertical, rect.bottom() - b * vertical, rect.bottom()};
         final int[] sx = {0, l, w - r, w};
         final int[] sy = {0, t, h - b, h};
 
         for (int row = 0; row < 3; row++) {
             for (int column = 0; column < 3; column++) {
                 if (dx[column + 1] > dx[column] && dy[row + 1] > dy[row] && sx[column + 1] > sx[column] && sy[row + 1] > sy[row]) {
-                    this.graphics.drawImage(img,
-                            dx[column], dy[row], dx[column + 1], dy[row + 1],
-                            sx[column], sy[row], sx[column + 1], sy[row + 1], null);
+                    this.drawImage(img, dx[column], dy[row], dx[column + 1], dy[row + 1],
+                            sx[column], sy[row], sx[column + 1], sy[row + 1]);
                 }
             }
         }
@@ -197,25 +199,22 @@ public final class SwingCanvas implements Canvas {
         if ((style.color() >>> 24) == 0 || span.text().isEmpty()) {
             return;
         }
-        this.graphics.setFont(this.fonts.font(style));
-        final float baseline = y + this.fonts.metrics(style).getAscent();
-
-        // Draw the layout the width was measured from, so spans side by side meet exactly
-        final TextLayout layout = this.fonts.layout(span);
+        // Draw with the font the width was measured with, so spans side by side meet exactly
+        final SwingFont font = this.fonts.font(style);
+        final float baseline = y + font.ascent(style);
         if (style.shadow()) {
-            this.graphics.setColor(new Color(shadowOf(style.color()), true));
-            layout.draw(this.graphics, x + 1f, baseline + 1f);
+            font.draw(this.graphics, span, x + 1f, baseline + 1f, shadowOf(style.color()));
         }
-        this.graphics.setColor(new Color(style.color(), true));
-        layout.draw(this.graphics, x, baseline);
+        font.draw(this.graphics, span, x, baseline, style.color());
 
         if (style.underline() || style.strikethrough()) {
-            final float width = this.fonts.width(span);
+            final float width = font.width(span);
+            this.graphics.setColor(new Color(style.color(), true));
             if (style.underline()) {
                 this.graphics.fill(new Rectangle2D.Float(x, baseline + 1f, width, 1f));
             }
             if (style.strikethrough()) {
-                this.graphics.fill(new Rectangle2D.Float(x, baseline - this.fonts.metrics(style).getAscent() * 0.35f, width, 1f));
+                this.graphics.fill(new Rectangle2D.Float(x, baseline - font.ascent(style) * 0.35f, width, 1f));
             }
         }
     }
@@ -256,9 +255,7 @@ public final class SwingCanvas implements Canvas {
             return;
         }
         final BufferedImage img = tint == 0xFFFFFFFF ? image.image() : tint(image.image(), tint);
-        this.graphics.drawImage(img,
-                round(rect.x()), round(rect.y()), round(rect.right()), round(rect.bottom()),
-                0, 0, img.getWidth(), img.getHeight(), null);
+        this.drawImage(img, rect.x(), rect.y(), rect.right(), rect.bottom(), 0, 0, img.getWidth(), img.getHeight());
     }
 
     @Override
@@ -271,7 +268,41 @@ public final class SwingCanvas implements Canvas {
         this.requestedCursor = cursor;
     }
 
+    /**
+     * Draws part of an image over a rectangle in UI units, with each edge moved to the nearest device pixel as
+     * {@link #snapped} does. A rotated, sheared or flipped transform draws at the nearest whole units instead.
+     */
+    private void drawImage(final BufferedImage image, final float left, final float top, final float right,
+                           final float bottom, final int sx0, final int sy0, final int sx1, final int sy1) {
+        final AffineTransform transform = this.graphics.getTransform();
+        final double scaleX = transform.getScaleX();
+        final double scaleY = transform.getScaleY();
+        if (transform.getShearX() != 0d || transform.getShearY() != 0d || !(scaleX > 0d) || !(scaleY > 0d)) {
+            this.graphics.drawImage(image, round(left), round(top), round(right), round(bottom),
+                    sx0, sy0, sx1, sy1, null);
+            return;
+        }
+        final int x0 = (int) Math.round(left * scaleX + transform.getTranslateX());
+        final int y0 = (int) Math.round(top * scaleY + transform.getTranslateY());
+        final int x1 = (int) Math.round(right * scaleX + transform.getTranslateX());
+        final int y1 = (int) Math.round(bottom * scaleY + transform.getTranslateY());
+        if (x1 <= x0 || y1 <= y0) {
+            return;
+        }
+        // The clip is kept in device space, so it still applies after the transform is reset
+        this.graphics.setTransform(new AffineTransform());
+        try {
+            this.graphics.drawImage(image, x0, y0, x1, y1, sx0, sy0, sx1, sy1, null);
+        } finally {
+            this.graphics.setTransform(transform);
+        }
+    }
+
     private Optional<BufferedImage> image(final SpriteId sprite, final int tint) {
+        if (this.sprites.version() != this.spritesVersion) {
+            this.spritesVersion = this.sprites.version();
+            this.tinted.clear();
+        }
         final Optional<BufferedImage> image = this.sprites.get(sprite);
         if (image.isEmpty() || tint == 0xFFFFFFFF) {
             return image;

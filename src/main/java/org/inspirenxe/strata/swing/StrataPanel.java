@@ -62,6 +62,8 @@ import javax.swing.Timer;
  *     <li>Characters come from AWT's key-typed events, with surrogate pairs joined into one code point and control
  *     characters dropped.</li>
  *     <li>Shift plus the vertical wheel scrolls horizontally.</li>
+ *     <li>It consumes Alt and F10 key events, so they reach Strata without putting the window into its native menu
+ *     mode, which on Windows would swallow wheel input until the key is pressed again.</li>
  * </ul>
  *
  * <p>Use it on the Swing event thread only.</p>
@@ -70,7 +72,8 @@ public final class StrataPanel extends JPanel {
     private static final long serialVersionUID = 1L;
 
     private final transient ScreenStack screens;
-    private final transient SwingCanvas canvas;
+    private final transient SwingTextMetrics textMetrics;
+    private transient SwingCanvas canvas;
     private final transient HeldKeys heldKeys;
     private final transient Timer repaintTimer;
     /**
@@ -111,7 +114,8 @@ public final class StrataPanel extends JPanel {
             throw new IllegalArgumentException("Scale must be positive: " + scale);
         }
         this.screens = StrataCore.createScreenStack(platform, theme);
-        this.canvas = new SwingCanvas(platform.textMetrics(), sprites);
+        this.textMetrics = platform.textMetrics();
+        this.canvas = new SwingCanvas(this.textMetrics, sprites);
         this.heldKeys = new HeldKeys();
         this.repaintTimer = new Timer(16, event -> this.repaint());
         this.scale = scale;
@@ -142,6 +146,17 @@ public final class StrataPanel extends JPanel {
      */
     public ScreenStack screens() {
         return this.screens;
+    }
+
+    /**
+     * Draws sprites from other images from the next frame on, such as when a tool switches between sets of
+     * images. The screens stay open; pair it with {@code screens().setTheme(...)} to change look in place.
+     *
+     * @param sprites where sprite images come from
+     */
+    public void setSprites(final SwingSprites sprites) {
+        this.canvas = new SwingCanvas(this.textMetrics, sprites);
+        this.repaint();
     }
 
     /**
@@ -282,6 +297,7 @@ public final class StrataPanel extends JPanel {
             final Key key = SwingInput.key(event);
             final KeyAction action = StrataPanel.this.heldKeys.press(key);
             StrataPanel.this.screens.key(key, action, SwingInput.modifiers(event));
+            consumeMenuKey(event);
         }
 
         @Override
@@ -289,6 +305,17 @@ public final class StrataPanel extends JPanel {
             final Key key = SwingInput.key(event);
             StrataPanel.this.heldKeys.release(key);
             StrataPanel.this.screens.key(key, KeyAction.RELEASE, SwingInput.modifiers(event));
+            consumeMenuKey(event);
+        }
+
+        /**
+         * Consumes the keys that would otherwise put the window into its native menu mode.
+         */
+        private static void consumeMenuKey(final KeyEvent event) {
+            final int code = event.getKeyCode();
+            if (code == KeyEvent.VK_ALT || code == KeyEvent.VK_F10) {
+                event.consume();
+            }
         }
 
         @Override

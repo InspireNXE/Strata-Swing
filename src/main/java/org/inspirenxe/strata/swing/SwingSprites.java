@@ -18,25 +18,23 @@ package org.inspirenxe.strata.swing;
 import org.inspirenxe.strata.api.theme.SpriteId;
 
 import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
-import javax.imageio.ImageIO;
 
 /**
- * Loads sprites for the Swing canvas from the class path, at the resource a {@link SpriteResolver} names
- * ({@link SpriteResolver#DEFAULT} unless one is given). Images are loaded once and cached, including the fact that
- * one is missing.
+ * Loads sprites for the Swing canvas from a {@link SpriteSource}: by default the class path, at the resource a
+ * {@link SpriteResolver} names ({@link SpriteResolver#DEFAULT} unless one is given). Images are loaded once and
+ * cached, including the fact that one is missing, until {@link #clear()}.
  */
 public final class SwingSprites {
-    private final ClassLoader loader;
-    private final SpriteResolver resolver;
+    private final SpriteSource source;
     private final Map<SpriteId, Optional<BufferedImage>> cache;
+    private long version;
 
     /**
-     * Creates a loader that uses {@link SpriteResolver#DEFAULT}.
+     * Creates a loader that reads the class path with {@link SpriteResolver#DEFAULT}.
      *
      * @param loader the class loader to find images with
      */
@@ -45,14 +43,22 @@ public final class SwingSprites {
     }
 
     /**
-     * Creates a loader.
+     * Creates a loader that reads the class path.
      *
      * @param loader the class loader to find images with
      * @param resolver where each sprite's image lives on the class path
      */
     public SwingSprites(final ClassLoader loader, final SpriteResolver resolver) {
-        this.loader = loader;
-        this.resolver = resolver;
+        this(SpriteSource.classPath(loader, resolver));
+    }
+
+    /**
+     * Creates a loader that reads from any source.
+     *
+     * @param source where images come from
+     */
+    public SwingSprites(final SpriteSource source) {
+        this.source = Objects.requireNonNull(source, "source");
         this.cache = new HashMap<>();
     }
 
@@ -60,19 +66,27 @@ public final class SwingSprites {
      * Returns a sprite's image.
      *
      * @param sprite the sprite
-     * @return the image, or empty if there is no such resource or it cannot be read as an image
+     * @return the image, or empty if the source has none
      */
     public Optional<BufferedImage> get(final SpriteId sprite) {
-        return this.cache.computeIfAbsent(sprite, this::load);
+        return this.cache.computeIfAbsent(sprite, this.source::load);
     }
 
-    private Optional<BufferedImage> load(final SpriteId sprite) {
-        final String path = this.resolver.resourcePath(sprite);
-        try (InputStream in = this.loader.getResourceAsStream(path)) {
-            return in == null ? Optional.empty() : Optional.ofNullable(ImageIO.read(in));
-        } catch (final IOException e) {
-            // A broken image is treated like a missing one, so the canvas draws its placeholder instead of failing
-            return Optional.empty();
-        }
+    /**
+     * Forgets every loaded image, so each is loaded from the source again when next drawn. Canvases drop their
+     * tinted copies too.
+     */
+    public void clear() {
+        this.cache.clear();
+        this.version++;
+    }
+
+    /**
+     * Returns a number that changes on every {@link #clear()}, so a canvas knows when its tinted copies are stale.
+     *
+     * @return the version
+     */
+    public long version() {
+        return this.version;
     }
 }
