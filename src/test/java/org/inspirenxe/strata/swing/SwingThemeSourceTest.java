@@ -15,21 +15,29 @@
  */
 package org.inspirenxe.strata.swing;
 
+import org.inspirenxe.strata.api.control.button.Button;
+import org.inspirenxe.strata.api.theme.Paint;
+import org.inspirenxe.strata.api.theme.Theme;
+import org.inspirenxe.strata.api.theme.ThemeException;
 import org.inspirenxe.strata.api.theme.ThemeId;
+import org.inspirenxe.strata.api.theme.ThemeRef;
 import org.inspirenxe.strata.api.theme.Themes;
 import org.inspirenxe.strata.spi.ThemeDocument;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SwingThemeSourceTest {
@@ -76,5 +84,52 @@ class SwingThemeSourceTest {
             source.register(ID, Themes.flat());
             assertTrue(source.base(ID).isPresent());
         }
+    }
+
+    @Test
+    void registeredFilesAreBaseFilesAndReplaceABaseTheme(@TempDir final Path root) throws IOException {
+        try (URLClassLoader loader = new URLClassLoader(new URL[] {root.toUri().toURL()}, null)) {
+            final SwingThemeSource source = new SwingThemeSource(loader);
+            source.register(ID, Themes.flat());
+            final long version = source.version();
+            final ThemeDocument base = new ThemeDocument("shop.json",
+                    "{ \"parent\": \"strata:flat\", \"paints\": { \"button.normal\": \"#000001\" } }", "shop");
+            source.register(ID, List.of(base));
+            assertNotEquals(version, source.version());
+            assertTrue(source.base(ID).isEmpty());
+            assertEquals(List.of(base), source.bases(ID));
+            assertThrows(IllegalArgumentException.class, () -> source.register(ID, List.of()));
+
+            write(root, "{ \"paints\": { \"button.hovered\": \"#000002\" } }");
+            source.reload();
+            final Theme theme = source.resolve(ThemeRef.of(ID));
+            assertEquals(Paint.solid(0xFF000001), theme.paint(Button.STYLE_NORMAL).orElseThrow());
+            assertEquals(Optional.of("shop"), theme.layer(Button.STYLE_NORMAL));
+            assertEquals(Paint.solid(0xFF000002), theme.paint(Button.STYLE_HOVERED).orElseThrow());
+            assertEquals(Optional.of(root.toUri().toURL().toString()), theme.layer(Button.STYLE_HOVERED));
+            assertEquals(Themes.flat().paint(Button.STYLE_PRESSED), theme.paint(Button.STYLE_PRESSED));
+
+            source.register(ID, Themes.flat());
+            assertTrue(source.bases(ID).isEmpty());
+        }
+    }
+
+    @Test
+    void aBrokenBaseFileFailsToResolve(@TempDir final Path root) throws IOException {
+        try (URLClassLoader loader = new URLClassLoader(new URL[] {root.toUri().toURL()}, null)) {
+            final SwingThemeSource source = new SwingThemeSource(loader);
+            source.register(ID, List.of(new ThemeDocument("broken.json", "{ nope", "shop")));
+            final ThemeException e = assertThrows(ThemeException.class, () -> source.resolve(ThemeRef.of(ID)));
+            assertTrue(e.getMessage().contains("broken.json"), e.getMessage());
+        }
+    }
+
+    @Test
+    void aJarsLayerIsItsFileName() throws IOException {
+        final String name = "assets/mod/themes/shop.json";
+        assertEquals("fancy.jar", SwingThemeSource.layerOf(
+                URI.create("jar:file:/C:/packs/fancy.jar!/" + name).toURL(), name));
+        assertEquals("file:/C:/build/resources/main/", SwingThemeSource.layerOf(
+                URI.create("file:/C:/build/resources/main/" + name).toURL(), name));
     }
 }

@@ -17,6 +17,8 @@ package org.inspirenxe.strata.swing;
 
 import org.inspirenxe.strata.api.theme.Theme;
 import org.inspirenxe.strata.api.theme.ThemeId;
+import org.inspirenxe.strata.api.theme.ThemeRef;
+import org.inspirenxe.strata.core.StrataCore;
 import org.inspirenxe.strata.spi.ThemeDocument;
 import org.inspirenxe.strata.spi.ThemeSource;
 
@@ -36,17 +38,21 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Finds theme files on the class path at {@code assets/<namespace>/themes/<path>.json}, next to where
- * {@link SpriteResolver#DEFAULT} looks for sprites, or wherever a {@link ThemePathResolver} says. Every class path entry that has the file contributes one
- * document. An entry earlier on the class path has higher priority, as it does for any other resource.
+ * {@link SpriteResolver#DEFAULT} looks for sprites, or wherever a {@link ThemePathResolver} says. Every class path
+ * entry that has the file contributes one document. An entry earlier on the class path has higher priority, as it
+ * does for any other resource. Each document's layer is named after the entry it came from: a jar's file name, or
+ * the URL of a directory.
  *
- * <p>Themes built in code can be registered with {@link #register}. Files are read once per id and cached until
- * {@link #reload()}, which also tells open hosts to resolve their themes again. A file that cannot be read is
- * left out.</p>
+ * <p>A theme's base can be registered in two ways: a theme built in code with {@link #register(ThemeId, Theme)}, or
+ * base files with {@link #register(ThemeId, List)}, for a theme written as JSON. Files are read once per id and
+ * cached until {@link #reload()}, which also tells open hosts to resolve their themes again. A file that cannot be
+ * read is left out.</p>
  */
 public final class SwingThemeSource implements ThemeSource {
     private final ClassLoader loader;
     private final ThemePathResolver resolver;
     private final Map<ThemeId, Theme> bases;
+    private final Map<ThemeId, List<ThemeDocument>> baseFiles;
     private final Map<ThemeId, List<ThemeDocument>> cache;
     private final AtomicLong version;
 
@@ -69,18 +75,47 @@ public final class SwingThemeSource implements ThemeSource {
         this.loader = Objects.requireNonNull(loader, "loader");
         this.resolver = Objects.requireNonNull(resolver, "resolver");
         this.bases = new HashMap<>();
+        this.baseFiles = new HashMap<>();
         this.cache = new HashMap<>();
         this.version = new AtomicLong();
     }
 
     /**
-     * Registers a theme built in code under an id, replacing any earlier one, and reloads.
+     * Registers a theme built in code under an id, replacing any base theme or base files registered under it
+     * before, and reloads.
      *
      * @param id the id theme refs and theme files use
      * @param theme the theme
      */
     public synchronized void register(final ThemeId id, final Theme theme) {
-        this.bases.put(Objects.requireNonNull(id, "id"), Objects.requireNonNull(theme, "theme"));
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(theme, "theme");
+        this.baseFiles.remove(id);
+        this.bases.put(id, theme);
+        this.reload();
+    }
+
+    /**
+     * Registers base files under an id, replacing any base theme or base files registered under it before, and
+     * reloads. Core starts the theme from the {@code parent} the last of them names, applies them in order, and then
+     * applies the theme files the class path has for the id, whose {@code parent} it ignores. Each file's keys
+     * report its {@link ThemeDocument#layer}. A base file that cannot be parsed makes the theme fail to resolve with
+     * a {@link org.inspirenxe.strata.api.theme.ThemeException} naming the file's origin.
+     *
+     * <p>Keep the files somewhere the {@link ThemePathResolver} does not look, or they apply twice, once as base
+     * files and once as theme files.</p>
+     *
+     * @param id the id theme refs and theme files use
+     * @param documents the base files, lowest priority first; copied
+     * @throws IllegalArgumentException if there are no documents
+     */
+    public synchronized void register(final ThemeId id, final List<ThemeDocument> documents) {
+        Objects.requireNonNull(id, "id");
+        if (documents.isEmpty()) {
+            throw new IllegalArgumentException("Theme " + id + " needs at least one base file");
+        }
+        this.bases.remove(id);
+        this.baseFiles.put(id, List.copyOf(documents));
         this.reload();
     }
 
@@ -93,9 +128,27 @@ public final class SwingThemeSource implements ThemeSource {
         this.version.incrementAndGet();
     }
 
+    /**
+     * Resolves a ref against this source once, with the themes and overrides added in code, as a host does when it
+     * opens. Tools use it to get a fixed {@link Theme}, for example to adjust some of its paints with
+     * {@link Theme#toBuilder()}.
+     *
+     * @param ref the ref
+     * @return the theme
+     * @throws org.inspirenxe.strata.api.theme.ThemeException if the ref cannot be resolved
+     */
+    public Theme resolve(final ThemeRef ref) {
+        return StrataCore.resolveTheme(this, ref);
+    }
+
     @Override
     public synchronized Optional<Theme> base(final ThemeId id) {
         return Optional.ofNullable(this.bases.get(id));
+    }
+
+    @Override
+    public synchronized List<ThemeDocument> bases(final ThemeId id) {
+        return this.baseFiles.getOrDefault(id, List.of());
     }
 
     @Override
@@ -117,7 +170,7 @@ public final class SwingThemeSource implements ThemeSource {
                 final URL url = urls.nextElement();
                 try (InputStream in = url.openStream()) {
                     documents.add(new ThemeDocument(url.toString(), new String(in.readAllBytes(),
-                            StandardCharsets.UTF_8)));
+                            StandardCharsets.UTF_8), SwingThemeSource.layerOf(url, name)));
                 } catch (final IOException ignored) {
                     // An unreadable file is left out, as the ThemeSource contract asks
                 }
@@ -128,5 +181,22 @@ public final class SwingThemeSource implements ThemeSource {
         // The class path lists the highest priority first; documents want it last
         Collections.reverse(documents);
         return List.copyOf(documents);
+    }
+
+    /**
+     * Names the class path entry a resource was found in: a jar's file name, or the URL of a directory.
+     *
+     * @param url where the resource was found
+     * @param name the resource's path
+     * @return the layer name
+     */
+    static String layerOf(final URL url, final String name) {
+        final String text = url.toString();
+        final String root = text.endsWith(name) ? text.substring(0, text.length() - name.length()) : text;
+        if (root.startsWith("jar:") && root.endsWith("!/")) {
+            final String jar = root.substring("jar:".length(), root.length() - "!/".length());
+            return jar.substring(jar.lastIndexOf('/') + 1);
+        }
+        return root;
     }
 }
