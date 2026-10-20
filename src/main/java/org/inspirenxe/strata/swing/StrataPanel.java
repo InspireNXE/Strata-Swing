@@ -16,13 +16,22 @@
 package org.inspirenxe.strata.swing;
 
 import org.inspirenxe.strata.api.component.CursorKind;
+import org.inspirenxe.strata.api.geometry.Rect;
 import org.inspirenxe.strata.api.input.Key;
 import org.inspirenxe.strata.api.input.KeyAction;
 import org.inspirenxe.strata.api.input.ScrollKind;
+import org.inspirenxe.strata.api.input.TextInputKind;
+import org.inspirenxe.strata.api.text.TextMetrics;
 import org.inspirenxe.strata.api.theme.Theme;
 import org.inspirenxe.strata.core.StrataCore;
+import org.inspirenxe.strata.spi.Capabilities;
+import org.inspirenxe.strata.spi.Clipboard;
+import org.inspirenxe.strata.spi.Clock;
 import org.inspirenxe.strata.spi.HeldKeys;
+import org.inspirenxe.strata.spi.Platform;
 import org.inspirenxe.strata.spi.ScreenStack;
+import org.inspirenxe.strata.spi.TextInputSink;
+import org.inspirenxe.strata.spi.ThemeSource;
 
 import java.awt.Color;
 import java.awt.Cursor;
@@ -64,6 +73,9 @@ import javax.swing.Timer;
  *     <li>Shift plus the vertical wheel scrolls horizontally.</li>
  *     <li>It consumes Alt and F10 key events, so they reach Strata without putting the window into its native menu
  *     mode, which on Windows would swallow wheel input until the key is pressed again.</li>
+ *     <li>While a field that takes {@link TextInputKind#SECRET} text has focus, such as a password box, it turns
+ *     input methods off on itself, as Swing's own password field does, so no composition window shows or keeps
+ *     what is typed. They come back on when focus moves to another field or leaves the fields.</li>
  * </ul>
  *
  * <p>Use it on the Swing event thread only.</p>
@@ -84,6 +96,10 @@ public final class StrataPanel extends JPanel {
      * The high half of a surrogate pair that AWT typed, waiting for its low half; 0 when nothing is waiting.
      */
     private char pendingHighSurrogate;
+    /**
+     * Whether a field that takes secret text has focus, so input methods are off.
+     */
+    private boolean secretInput;
 
     /**
      * Creates a panel with an empty screen stack. Sprites load from this class's class loader with
@@ -113,7 +129,7 @@ public final class StrataPanel extends JPanel {
         if (!(scale > 0f)) {
             throw new IllegalArgumentException("Scale must be positive: " + scale);
         }
-        this.screens = StrataCore.createScreenStack(platform, theme);
+        this.screens = StrataCore.createScreenStack(new PanelPlatform(platform, new SecretInputSink()), theme);
         this.textMetrics = platform.textMetrics();
         this.canvas = new SwingCanvas(this.textMetrics, sprites);
         this.heldKeys = new HeldKeys();
@@ -166,6 +182,15 @@ public final class StrataPanel extends JPanel {
      */
     public float scale() {
         return this.scale;
+    }
+
+    /**
+     * Returns whether input methods are off because a field that takes secret text has focus.
+     *
+     * @return true while a secret field has focus
+     */
+    boolean isSecretInput() {
+        return this.secretInput;
     }
 
     /**
@@ -238,6 +263,64 @@ public final class StrataPanel extends JPanel {
             case RESIZE_VERTICAL -> Cursor.N_RESIZE_CURSOR;
             case RESIZE_ALL -> Cursor.MOVE_CURSOR;
         });
+    }
+
+    /**
+     * Turns the panel's input methods off while a secret field has focus and on again otherwise.
+     */
+    private final class SecretInputSink implements TextInputSink {
+        @Override
+        public void start(final Rect caretArea) {
+            this.start(caretArea, TextInputKind.TEXT);
+        }
+
+        @Override
+        public void start(final Rect caretArea, final TextInputKind kind) {
+            this.secret(kind == TextInputKind.SECRET);
+        }
+
+        @Override
+        public void stop() {
+            this.secret(false);
+        }
+
+        private void secret(final boolean secret) {
+            if (StrataPanel.this.secretInput != secret) {
+                StrataPanel.this.secretInput = secret;
+                StrataPanel.this.enableInputMethods(!secret);
+            }
+        }
+    }
+
+    /**
+     * The panel's platform: the given one, with the panel's own text input sink. AWT delivers typed characters
+     * without being told, so the given platform's sink has nothing to do.
+     */
+    private record PanelPlatform(SwingPlatform platform, TextInputSink textInput) implements Platform {
+        @Override
+        public TextMetrics textMetrics() {
+            return this.platform.textMetrics();
+        }
+
+        @Override
+        public Clipboard clipboard() {
+            return this.platform.clipboard();
+        }
+
+        @Override
+        public Clock clock() {
+            return this.platform.clock();
+        }
+
+        @Override
+        public Capabilities capabilities() {
+            return this.platform.capabilities();
+        }
+
+        @Override
+        public ThemeSource themes() {
+            return this.platform.themes();
+        }
     }
 
     private final class Mouse extends MouseAdapter {

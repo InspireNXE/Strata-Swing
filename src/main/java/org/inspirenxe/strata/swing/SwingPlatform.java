@@ -39,7 +39,8 @@ import java.util.Optional;
  *     <li>The clipboard is the system clipboard. In a headless JVM there is none, and the clipboard is
  *     {@link Clipboard#NONE}.</li>
  *     <li>The clock is {@link Clock#SYSTEM}.</li>
- *     <li>AWT delivers typed characters without being told, so text input needs no signal.</li>
+ *     <li>AWT delivers typed characters without being told, so text input needs no signal. A {@link StrataPanel}
+ *     replaces this platform's sink with its own, which turns input methods off while a secret field has focus.</li>
  *     <li>AWT reports held keys as repeated presses, which {@link StrataPanel} turns into repeats, so
  *     {@link Capabilities#sendsKeyRepeat()} is true.</li>
  *     <li>Themes named by id come from a {@link SwingThemeSource}, which reads theme files from the class

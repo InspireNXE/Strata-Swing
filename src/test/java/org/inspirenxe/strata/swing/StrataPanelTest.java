@@ -18,6 +18,7 @@ package org.inspirenxe.strata.swing;
 import org.inspirenxe.strata.api.ComponentFactory;
 import org.inspirenxe.strata.api.component.Component;
 import org.inspirenxe.strata.api.control.button.Button;
+import org.inspirenxe.strata.api.control.field.PasswordTextBox;
 import org.inspirenxe.strata.api.control.field.TextBox;
 import org.inspirenxe.strata.api.event.input.InputEvents;
 import org.inspirenxe.strata.api.input.KeyAction;
@@ -39,7 +40,9 @@ import java.util.List;
 import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Drives a {@link StrataPanel} with synthetic AWT events, calling its listeners directly so no display or focus
@@ -165,6 +168,29 @@ class StrataPanelTest {
         this.key(KeyEvent.KEY_TYPED, KeyEvent.VK_UNDEFINED, '\u0008');
 
         assertEquals("hi😀", box[0].text());
+    }
+
+    @Test
+    void inputMethodsAreOffOnlyWhileASecretFieldHasFocus() {
+        final TextBox[] name = new TextBox[1];
+        final PasswordTextBox[] password = new PasswordTextBox[1];
+        this.show(factory -> {
+            name[0] = factory.textBox();
+            password[0] = factory.passwordTextBox();
+            return factory.absolutePanel().add(name[0]).add(password[0], 0, 40);
+        });
+
+        password[0].requestFocus();
+        assertTrue(this.panel.isSecretInput());
+        this.key(KeyEvent.KEY_TYPED, KeyEvent.VK_UNDEFINED, 'p');
+        assertEquals(1, password[0].length());
+
+        name[0].requestFocus();
+        assertFalse(this.panel.isSecretInput());
+        password[0].requestFocus();
+        assertTrue(this.panel.isSecretInput());
+        password[0].setEnabled(false);
+        assertFalse(this.panel.isSecretInput(), "focus left the fields");
     }
 
     @Test
