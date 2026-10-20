@@ -18,6 +18,7 @@ package org.inspirenxe.strata.swing;
 import org.inspirenxe.strata.core.StrataCore;
 import org.inspirenxe.strata.spi.Translator;
 
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.ResourceBundle;
@@ -40,10 +41,17 @@ public final class SwingTranslations {
      * Translates with a resource bundle. Keys the bundle lacks fall back as if no translator were set. Call this
      * again with another bundle to change the language.
      *
+     * <p>The bundle's {@linkplain ResourceBundle#getLocale() locale} becomes the translator's locale, which dates and
+     * times follow: month and weekday names, the first day of the week, the order of a date's parts and the 12 or 24
+     * hour clock. A base bundle, whose locale is {@link Locale#ROOT}, leaves the JVM's default locale for formatting
+     * in place.</p>
+     *
      * @param bundle the bundle, whose values are patterns with {@code %s}, {@code %1} and {@code %%}
      */
     public static void use(final ResourceBundle bundle) {
         Objects.requireNonNull(bundle, "bundle");
+        final Locale locale = bundle.getLocale() == null || bundle.getLocale().equals(Locale.ROOT)
+                ? Locale.getDefault(Locale.Category.FORMAT) : bundle.getLocale();
         SwingTranslations.use(new Translator() {
             @Override
             public Optional<String> translate(final String key) {
@@ -53,6 +61,11 @@ public final class SwingTranslations {
             @Override
             public long version() {
                 return 0L;
+            }
+
+            @Override
+            public Locale locale() {
+                return locale;
             }
         });
     }
