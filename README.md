@@ -23,7 +23,7 @@ Building needs JDK 25 and a Strata checkout beside this one at `../Strata`, for 
 ./gradlew build
 ```
 
-The [Swing platform page](https://inspirenxe.github.io/Strata/platforms/swing/) covers the rest.
+The [Swing platform page](https://inspirenxe.github.io/Strata-Docs/platforms/swing/) covers the rest.
 
 ## License
 
