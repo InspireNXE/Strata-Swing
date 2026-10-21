@@ -22,6 +22,7 @@ import org.inspirenxe.strata.api.input.KeyAction;
 import org.inspirenxe.strata.api.input.ScrollKind;
 import org.inspirenxe.strata.api.input.TextInputKind;
 import org.inspirenxe.strata.api.text.TextMetrics;
+import org.inspirenxe.strata.api.screen.ScreenController;
 import org.inspirenxe.strata.api.theme.Theme;
 import org.inspirenxe.strata.core.StrataCore;
 import org.inspirenxe.strata.spi.Capabilities;
@@ -50,14 +51,21 @@ import javax.swing.JPanel;
 import javax.swing.Timer;
 
 /**
- * A Swing component that shows a stack of Strata screens. Add it to a window and push screens onto
- * {@link #screens()}.
+ * A Swing component that shows a stack of Strata screens. Add it to a window and open screens on
+ * {@link #screens()}, or mark it as the default panel so that {@code Strata.screens()} opens screens on it.
  *
  * <pre>{@code
  * StrataPanel panel = new StrataPanel(new SwingPlatform(SwingTextMetrics.defaults()), Themes.flat(), 2f);
- * panel.screens().push(new SettingsScreen());
+ * panel.setDefault();
  * frame.setContentPane(panel);
+ * Strata.screens().open(new SettingsScreen());
  * }</pre>
+ *
+ * <p>{@code screens().push(screen)} shows a screen in the theme given to the constructor, or the one set later on
+ * the stack. {@code open(screen)} shows it in the platform's default theme, which the platform's
+ * {@link SwingThemeSource#setDefaultTheme} sets and is {@code strata:flat} until then. Swing has no screens of its
+ * own, so with no default panel {@code Strata.screens()} throws {@link IllegalStateException}; it does not open a
+ * window.</p>
  *
  * <p>How Swing maps onto Strata:</p>
  * <ul>
@@ -82,6 +90,11 @@ import javax.swing.Timer;
  */
 public final class StrataPanel extends JPanel {
     private static final long serialVersionUID = 1L;
+
+    /**
+     * The panel marked with {@link #setDefault()}, or {@code null}.
+     */
+    private static StrataPanel defaultPanel;
 
     private final transient ScreenStack screens;
     private final transient SwingTextMetrics textMetrics;
@@ -156,12 +169,47 @@ public final class StrataPanel extends JPanel {
     }
 
     /**
-     * Returns the screens this panel shows. Push a screen to show it; the top screen gets the input.
+     * Returns the screens this panel shows, which is also this panel's {@link ScreenController}. Push or open a
+     * screen to show it; the top screen gets the input.
      *
      * @return the screen stack
      */
     public ScreenStack screens() {
         return this.screens;
+    }
+
+    /**
+     * Marks this panel as the default, so that {@code Strata.screens()} returns its {@link #screens()} and screens
+     * opened through it show here. A later call on another panel moves the mark. The mark stays when the panel
+     * leaves its window; mark another panel to move it.
+     */
+    public void setDefault() {
+        synchronized (StrataPanel.class) {
+            defaultPanel = this;
+            StrataCore.setScreenController(this.screens);
+        }
+    }
+
+    /**
+     * Returns whether this panel is the default, the one {@code Strata.screens()} opens screens on.
+     *
+     * @return true if {@link #setDefault()} marked this panel last
+     */
+    public boolean isDefault() {
+        synchronized (StrataPanel.class) {
+            return defaultPanel == this;
+        }
+    }
+
+    /**
+     * Removes the default mark from whichever panel has it, so that {@code Strata.screens()} throws again. For
+     * tests.
+     */
+    static void clearDefault() {
+        synchronized (StrataPanel.class) {
+            defaultPanel = null;
+            StrataCore.setScreenController(null);
+        }
     }
 
     /**

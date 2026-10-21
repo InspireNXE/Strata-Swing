@@ -18,6 +18,7 @@ package org.inspirenxe.strata.swing;
 import org.inspirenxe.strata.api.theme.Theme;
 import org.inspirenxe.strata.api.theme.ThemeId;
 import org.inspirenxe.strata.api.theme.ThemeRef;
+import org.inspirenxe.strata.api.theme.Themes;
 import org.inspirenxe.strata.core.StrataCore;
 import org.inspirenxe.strata.spi.ThemeDocument;
 import org.inspirenxe.strata.spi.ThemeSource;
@@ -47,6 +48,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * base files with {@link #register(ThemeId, List)}, for a theme written as JSON. Files are read once per id and
  * cached until {@link #reload()}, which also tells open hosts to resolve their themes again. A file that cannot be
  * read is left out.</p>
+ *
+ * <p>The platform's default theme, which screens opened without a theme use and {@code ThemeRef.platform()} names,
+ * is {@link Themes#FLAT} until {@link #setDefaultTheme} changes it.</p>
  */
 public final class SwingThemeSource implements ThemeSource {
     private final ClassLoader loader;
@@ -55,6 +59,7 @@ public final class SwingThemeSource implements ThemeSource {
     private final Map<ThemeId, List<ThemeDocument>> baseFiles;
     private final Map<ThemeId, List<ThemeDocument>> cache;
     private final AtomicLong version;
+    private volatile ThemeId defaultTheme = Themes.FLAT;
 
     /**
      * Creates a source.
@@ -117,6 +122,26 @@ public final class SwingThemeSource implements ThemeSource {
         this.bases.remove(id);
         this.baseFiles.put(id, List.copyOf(documents));
         this.reload();
+    }
+
+    /**
+     * Sets the platform's default theme for every panel whose platform reads this source, and reloads, so open
+     * screens in the default theme change to it on their next layout or render.
+     *
+     * @param id the theme screens opened without a theme use
+     * @throws IllegalArgumentException if the id is {@link Themes#PLATFORM}, which stands for the default
+     */
+    public void setDefaultTheme(final ThemeId id) {
+        if (Objects.requireNonNull(id, "id").equals(Themes.PLATFORM)) {
+            throw new IllegalArgumentException(Themes.PLATFORM + " stands for the default theme and cannot be it");
+        }
+        this.defaultTheme = id;
+        this.reload();
+    }
+
+    @Override
+    public ThemeId defaultTheme() {
+        return this.defaultTheme;
     }
 
     /**

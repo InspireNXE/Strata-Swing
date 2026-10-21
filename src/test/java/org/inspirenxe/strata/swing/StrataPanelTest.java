@@ -16,6 +16,7 @@
 package org.inspirenxe.strata.swing;
 
 import org.inspirenxe.strata.api.ComponentFactory;
+import org.inspirenxe.strata.api.Strata;
 import org.inspirenxe.strata.api.component.Component;
 import org.inspirenxe.strata.api.control.button.Button;
 import org.inspirenxe.strata.api.control.field.PasswordTextBox;
@@ -24,6 +25,9 @@ import org.inspirenxe.strata.api.event.input.InputEvents;
 import org.inspirenxe.strata.api.input.KeyAction;
 import org.inspirenxe.strata.api.layout.AbsolutePanel;
 import org.inspirenxe.strata.api.screen.Screen;
+import org.inspirenxe.strata.api.screen.ScreenHandle;
+import org.inspirenxe.strata.api.theme.Paint;
+import org.inspirenxe.strata.api.theme.ThemeId;
 import org.inspirenxe.strata.api.theme.Themes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +45,7 @@ import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -219,5 +224,53 @@ class StrataPanelTest {
         for (final MouseWheelListener listener : this.panel.getMouseWheelListeners()) {
             listener.mouseWheelMoved(event);
         }
+    }
+
+    @Test
+    void screensThrowsUntilAPanelIsTheDefault() {
+        StrataPanel.clearDefault();
+
+        final IllegalStateException error = assertThrows(IllegalStateException.class, Strata::screens);
+
+        assertTrue(error.getMessage().contains("StrataPanel.setDefault()"), error.getMessage());
+        assertFalse(this.panel.isDefault());
+    }
+
+    @Test
+    void theDefaultPanelOpensScreens() {
+        try {
+            this.panel.setDefault();
+            assertTrue(this.panel.isDefault());
+            assertSame(this.panel.screens(), Strata.screens());
+            final Screen screen = factory -> factory.anchorPanel();
+
+            Strata.screens().open(screen);
+
+            assertSame(screen, this.panel.screens().top().orElseThrow());
+
+            final StrataPanel other = new StrataPanel(new SwingPlatform(SwingTextMetrics.defaults()), Themes.flat(), 2f);
+            other.setDefault();
+            assertFalse(this.panel.isDefault());
+            assertTrue(other.isDefault());
+            assertSame(other.screens(), Strata.screens());
+        } finally {
+            StrataPanel.clearDefault();
+        }
+    }
+
+    @Test
+    void openUsesTheSourcesDefaultTheme() {
+        final ThemeId dark = ThemeId.of("app", "dark");
+        final Paint button = Paint.solid(0xFF203040);
+        final SwingThemeSource source = new SwingThemeSource(StrataPanelTest.class.getClassLoader());
+        source.register(dark, Themes.flat().toBuilder().paint(Button.STYLE_NORMAL, button).build());
+        source.setDefaultTheme(dark);
+        final StrataPanel themed = new StrataPanel(new SwingPlatform(SwingTextMetrics.defaults(), source),
+                Themes.flat(), 2f);
+
+        final ScreenHandle handle = themed.screens().open(factory -> factory.anchorPanel());
+
+        assertEquals(button, handle.factory().theme().paint(Button.STYLE_NORMAL).orElseThrow());
+        assertThrows(IllegalArgumentException.class, () -> source.setDefaultTheme(Themes.PLATFORM));
     }
 }
