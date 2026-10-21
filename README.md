@@ -17,7 +17,7 @@ Apps depend on `strata-swing`, which brings `strata-api` and `strata-spi` and ke
 
 ## Building
 
-Building needs JDK 25 and a Strata checkout beside this one at `../Strata`. Nothing is published yet.
+Building needs JDK 25 and a Strata checkout beside this one at `../Strata`, for Strata's convention plugins in `build-logic`. The adapter builds against that checkout, or against the Strata version in `gradle.properties` from Maven Central when only `build-logic` is there.
 
 ```bash
 ./gradlew build
