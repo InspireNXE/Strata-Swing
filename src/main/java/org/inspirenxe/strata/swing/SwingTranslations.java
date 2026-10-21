@@ -46,7 +46,7 @@ public final class SwingTranslations {
      * hour clock. A base bundle, whose locale is {@link Locale#ROOT}, leaves the JVM's default locale for formatting
      * in place.</p>
      *
-     * @param bundle the bundle, whose values are patterns with {@code %s}, {@code %1} and {@code %%}
+     * @param bundle the bundle, whose values are patterns with {@code %s}, {@code %1$s} and {@code %%}
      */
     public static void use(final ResourceBundle bundle) {
         Objects.requireNonNull(bundle, "bundle");
@@ -71,7 +71,9 @@ public final class SwingTranslations {
     }
 
     /**
-     * Translates with any translator, such as one that reads a different file format.
+     * Translates with any translator, such as one that reads a different file format. The translator must follow
+     * the {@link Translator} contract: it may be called from any thread, and its version must change whenever what
+     * it returns may.
      *
      * @param translator the translator
      */

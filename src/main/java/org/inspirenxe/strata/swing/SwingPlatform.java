@@ -45,7 +45,12 @@ import java.util.Optional;
  *     {@link Capabilities#sendsKeyRepeat()} is true.</li>
  *     <li>Themes named by id come from a {@link SwingThemeSource}, which reads theme files from the class
  *     path.</li>
+ *     <li>{@link Capabilities#monospaceFont()} is true, since the metrics hold a monospaced font, and
+ *     {@link Capabilities#slicesSprites()} is false, since Swing stores no slicing with its images.</li>
  * </ul>
+ *
+ * <p>The first platform made registers the adapter's appearance for {@code BufferedImage}: the image as its own
+ * icon, at its pixel size.</p>
  */
 public final class SwingPlatform implements Platform {
     private static final Capabilities CAPABILITIES = new Capabilities(true, true);

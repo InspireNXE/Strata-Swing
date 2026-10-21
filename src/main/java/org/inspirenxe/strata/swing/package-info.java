@@ -22,9 +22,18 @@
  * {@link org.inspirenxe.strata.swing.SwingPlatform} and {@link org.inspirenxe.strata.swing.SwingCanvas}, with
  * {@link org.inspirenxe.strata.swing.SwingInput} to translate AWT key and button codes.</p>
  *
- * <p>Sprites load from the class path, at {@code assets/<namespace>/sprites/<path>.png} unless a
- * {@link org.inspirenxe.strata.swing.SpriteResolver} names another place.</p>
+ * <p>Sprites load through {@link org.inspirenxe.strata.swing.SwingSprites}: from the class path, at
+ * {@code assets/<namespace>/sprites/<path>.png} unless a {@link org.inspirenxe.strata.swing.SpriteResolver} names
+ * another place, or from anywhere a {@link org.inspirenxe.strata.swing.SpriteSource} reads.
+ * {@link org.inspirenxe.strata.swing.SwingThemeSource} finds theme files at
+ * {@code assets/<namespace>/themes/<path>.json} unless a {@link org.inspirenxe.strata.swing.ThemePathResolver}
+ * names another place. Fonts are {@link org.inspirenxe.strata.swing.SwingFont}s held by
+ * {@link org.inspirenxe.strata.swing.SwingTextMetrics}: an {@link org.inspirenxe.strata.swing.AwtFont} or a
+ * {@link org.inspirenxe.strata.swing.BitmapFont}. {@link org.inspirenxe.strata.swing.SwingTranslations} sets where
+ * translated text comes from, and {@link org.inspirenxe.strata.swing.SwingVisuals} makes visuals of
+ * {@code BufferedImage}s.</p>
  *
- * <p>Like Swing itself, every class here must be used on the Swing event thread.</p>
+ * <p>Like Swing itself, the classes here must be used on the Swing event thread unless their documentation says
+ * otherwise.</p>
  */
 package org.inspirenxe.strata.swing;

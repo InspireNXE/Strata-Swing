@@ -51,6 +51,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <p>The platform's default theme, which screens opened without a theme use and {@code ThemeRef.platform()} names,
  * is {@link Themes#FLAT} until {@link #setDefaultTheme} changes it.</p>
+ *
+ * <p>Every method may be called from any thread.</p>
  */
 public final class SwingThemeSource implements ThemeSource {
     private final ClassLoader loader;
