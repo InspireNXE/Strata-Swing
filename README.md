@@ -1,21 +1,29 @@
+<p align="center"><img src=".github/assets/logo.svg" width="128" alt="Strata Swing logo"></p>
+
 # Strata Swing
 
-The Java2D/Swing adapter for [Strata](../Strata). It shows Strata screens in any Swing application and renders them to images without a display, which makes it the adapter for tools, tests and the [gallery](../Strata-Gallery).
+The Java2D/Swing adapter for [Strata](https://github.com/InspireNXE/Strata). It shows Strata screens in any Swing application and renders them to images without a display, which makes it the adapter for tools, tests and the [gallery](https://github.com/InspireNXE/Strata-Gallery).
 
-| Class | Role |
-|---|---|
-| `StrataPanel` | A `JPanel` that hosts a screen stack and forwards mouse, keyboard and focus input |
-| `SwingSnapshot` | Renders a screen to a `BufferedImage`, optionally after scripted input |
-| `SwingPlatform`, `SwingTextMetrics` | Text measurement, clipboard and clock for Swing |
-| `SwingVisuals`, `SpriteResolver` | Images as visuals, and where sprites load from (`assets/<namespace>/sprites/<path>.png` by default) |
+```java
+StrataPanel panel = new StrataPanel(new SwingPlatform(SwingTextMetrics.defaults()), Themes.flat(), 2f);
+panel.setDefault();
+frame.setContentPane(panel);
+Strata.screens().open(new SettingsScreen());
+```
 
-Apps depend on `strata-canvas-swing`, which brings `strata-api` and `strata-spi` with it and keeps the implementation, `strata-core`, out of their compile classpath. The adapter passes Strata's SPI contract tests.
+The last argument of `StrataPanel` is the number of pixels per UI unit. `SwingSnapshot` renders a screen to a `BufferedImage`, optionally after scripted input. Sprites load from `assets/<namespace>/sprites/<path>.png` unless a `SpriteResolver` says otherwise.
 
-The adapter builds against the Strata checkout beside it at `../Strata`, including Strata's convention plugins, so check the two out side by side. Nothing is published yet. Building needs JDK 25.
+Apps depend on `strata-canvas-swing`, which brings `strata-api` and `strata-spi` and keeps `strata-core` off the compile classpath. The adapter passes Strata's SPI contract tests.
+
+## Building
+
+Building needs JDK 25 and a Strata checkout beside this one at `../Strata`. Nothing is published yet.
 
 ```bash
 ./gradlew build
 ```
+
+The [Swing platform page](https://inspirenxe.github.io/Strata/platforms/swing/) covers the rest.
 
 ## License
 
