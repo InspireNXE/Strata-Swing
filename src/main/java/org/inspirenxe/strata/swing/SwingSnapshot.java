@@ -27,7 +27,7 @@ import java.awt.image.BufferedImage;
 import java.util.function.Consumer;
 
 /**
- * Renders one frame of a screen to an image, with no window or display. Tests and the sandbox's {@code --snapshot}
+ * Renders one frame of a screen to an image, with no window or display. Tests and the gallery's {@code --snapshot}
  * option use it to check layouts on headless machines.
  */
 public final class SwingSnapshot {
@@ -44,7 +44,7 @@ public final class SwingSnapshot {
      * @param theme the theme to render it with
      * @param width the image width in pixels
      * @param height the image height in pixels
-     * @param scale pixels per UI unit, the screen gets {@code width / scale} by
+     * @param scale pixels per UI unit; the screen gets {@code width / scale} by
      *     {@code height / scale} units
      * @return a new ARGB image of the frame
      * @throws org.inspirenxe.strata.api.theme.ThemeException if the theme lacks a style key the screen's tree

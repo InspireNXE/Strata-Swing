@@ -165,8 +165,8 @@ public final class StrataPanel extends JPanel {
     }
 
     /**
-     * Draws sprites from other images from the next frame on, such as when a tool switches between sets of
-     * images. The screens stay open; pair it with {@code screens().setTheme(...)} to change look in place.
+     * Changes where sprite images come from, starting with the next frame, such as when a tool switches between
+     * sets of images. The screens stay open; pair it with {@code screens().setTheme(...)} to change look in place.
      *
      * @param sprites where sprite images come from
      */

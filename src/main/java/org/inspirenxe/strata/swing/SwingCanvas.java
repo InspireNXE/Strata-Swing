@@ -47,7 +47,7 @@ import java.util.Optional;
  *     <li>A sprite tint other than opaque white multiplies each pixel's channels; tinted copies are cached per
  *     sprite and tint.</li>
  *     <li>A nine-slice shrinks its borders to fit a rectangle smaller than them. Its border is in the image's
- *     pixels, each drawn one UI unit wide; sized and tiled nine-slices are drawn by the host from
+ *     pixels, each drawn one UI unit wide; sized and tiled nine-slices are drawn by core from
  *     {@link #spriteRegion} calls, since Swing stores no slicing with its images.</li>
  *     <li>Text is drawn with the {@link SwingFont} its style's metrics measured it with, the shadow one unit down
  *     and to the right in a quarter-brightness copy of the color.</li>
