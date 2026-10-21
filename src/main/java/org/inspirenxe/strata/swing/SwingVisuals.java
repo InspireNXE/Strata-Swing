@@ -23,6 +23,11 @@ import java.util.Objects;
 
 /**
  * Makes {@link Visual}s that {@link SwingCanvas} draws, so Swing code can show its own images through the API.
+ *
+ * <p>The visuals are live: each holds the image it was given without copying it, and the canvas draws what the image
+ * holds at each paint, so drawing into the image shows on the next frame. Two of them are equal only when they hold
+ * the same image object at the same size. Draw into an image on the Swing event thread, the thread that paints it, so
+ * a frame never shows half a change.</p>
  */
 public final class SwingVisuals {
 
@@ -32,8 +37,8 @@ public final class SwingVisuals {
     /**
      * Returns a visual of an image whose natural size is the image's size in pixels, one UI unit per pixel.
      *
-     * @param image the image; it is not copied, so do not change it while it is shown
-     * @return the visual
+     * @param image the image, kept without copying; changes to it show on the next paint
+     * @return a live visual of the image
      */
     public static Visual image(final BufferedImage image) {
         return new ImageVisual(image, new Size(image.getWidth(), image.getHeight()));
@@ -43,10 +48,10 @@ public final class SwingVisuals {
      * Returns a visual of an image with a natural size of its own, for images drawn smaller or larger than their
      * pixels.
      *
-     * @param image the image; it is not copied, so do not change it while it is shown
+     * @param image the image, kept without copying; changes to it show on the next paint
      * @param width the natural width in UI units
      * @param height the natural height in UI units
-     * @return the visual
+     * @return a live visual of the image
      */
     public static Visual image(final BufferedImage image, final float width, final float height) {
         return new ImageVisual(image, new Size(width, height));
