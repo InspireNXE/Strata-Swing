@@ -7,7 +7,7 @@ description = 'Java2D/Swing adapter for Strata.'
 
 base {
     // The artifact keeps the adapter's name, whatever the repository is called
-    archivesName = 'strata-canvas-swing'
+    archivesName = 'strata-swing'
 }
 
 dependencies {
