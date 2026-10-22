@@ -16,26 +16,48 @@
 package org.inspirenxe.strata.swing;
 
 import org.inspirenxe.strata.api.component.CursorKind;
+import org.inspirenxe.strata.api.extension.Gradient;
+import org.inspirenxe.strata.api.extension.Shape;
+import org.inspirenxe.strata.api.extension.Stroke;
 import org.inspirenxe.strata.api.geometry.Insets;
 import org.inspirenxe.strata.api.geometry.Rect;
 import org.inspirenxe.strata.api.text.TextSpan;
 import org.inspirenxe.strata.api.text.TextStyle;
 import org.inspirenxe.strata.api.theme.SpriteId;
+import org.inspirenxe.strata.api.visual.PixelBuffer;
 import org.inspirenxe.strata.api.visual.Visual;
 import org.inspirenxe.strata.spi.Canvas;
 
+import java.awt.AlphaComposite;
+import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.Composite;
 import java.awt.GradientPaint;
 import java.awt.Graphics2D;
-import java.awt.Shape;
+import java.awt.LinearGradientPaint;
+import java.awt.RenderingHints;
 import java.awt.geom.AffineTransform;
+import java.awt.geom.Arc2D;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.Line2D;
+import java.awt.geom.Path2D;
+import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
+import java.awt.image.ColorModel;
+import java.awt.image.DataBufferInt;
+import java.awt.image.Raster;
+import java.awt.image.WritableRaster;
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.WeakHashMap;
 
 /**
  * The Swing {@link Canvas}: draws straight onto a {@link Graphics2D}, in call order.
@@ -56,6 +78,15 @@ import java.util.Optional;
  *     as magenta. A tinted visual is recolored on every draw, without a cache.</li>
  *     <li>Scales go through {@link Graphics2D#scale}, so text, clips and images scale with the rest.</li>
  *     <li>{@link #nextLayer()} does nothing, since Java2D already draws in order.</li>
+ *     <li>It draws every shape call, so the platform reports {@code drawsShapes}. Shapes, gradients at an angle and
+ *     shadows are anti-aliased unless {@link #pushSmoothing pushSmoothing(false)} turns it off, and strokes use pure
+ *     stroke control, so they land where the contract puts them. Shapes are kept as Java2D paths by identity.
+ *     Round clips are hard-edged. A shadow is a rounded rectangle blurred three times with a box blur, cached for
+ *     the 64 sizes and colors drawn last.</li>
+ *     <li>Opacity is an {@link AlphaComposite}, so a fade covers fills, gradients, shapes, sprites, nine-slices,
+ *     text, visuals and pixel buffers alike.</li>
+ *     <li>A pixel buffer is drawn from an image that shares its array, so a new version needs no copy, with nearest
+ *     neighbor scaling so that pixel art stays sharp. A tinted copy is made again when the version moves.</li>
  *     <li>The requested cursor is kept for the host component to apply after the frame; see
  *     {@link #requestedCursor()}.</li>
  * </ul>
@@ -70,9 +101,25 @@ public final class SwingCanvas implements Canvas {
     private final SwingTextMetrics fonts;
     private final SwingSprites sprites;
     private long spritesVersion;
-    private final Deque<Optional<Shape>> clips;
+    /** How many shadow images are kept, most recently drawn first. */
+    private static final int SHADOW_CACHE = 64;
+    /** How far apart two gradient stops at the same offset are drawn, since Java2D needs rising fractions. */
+    private static final float STOP_GAP = 1e-4f;
+
+    private final Deque<Optional<java.awt.Shape>> clips;
     private final Deque<AffineTransform> transforms;
     private final Map<TintKey, BufferedImage> tinted;
+    private final Map<Shape, Path2D.Float> paths;
+    private final Map<Stroke, BasicStroke> strokes;
+    private final Map<ShadowKey, BufferedImage> shadows;
+    private final Map<PixelBuffer, PixelImage> pixelImages;
+    private final Path2D.Float polyline;
+    private boolean[] smoothing;
+    private int smoothingDepth;
+    private float[] opacities;
+    private int opacityDepth;
+    private Composite baseComposite;
+    private float baseOpacity;
     private Graphics2D graphics;
     private CursorKind requestedCursor;
 
@@ -88,11 +135,25 @@ public final class SwingCanvas implements Canvas {
         this.clips = new ArrayDeque<>();
         this.transforms = new ArrayDeque<>();
         this.tinted = new HashMap<>();
+        this.paths = new WeakHashMap<>();
+        this.strokes = new HashMap<>();
+        this.shadows = new LinkedHashMap<>(16, 0.75f, true) {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            protected boolean removeEldestEntry(final Map.Entry<ShadowKey, BufferedImage> eldest) {
+                return this.size() > SHADOW_CACHE;
+            }
+        };
+        this.pixelImages = new WeakHashMap<>();
+        this.polyline = new Path2D.Float();
+        this.smoothing = new boolean[8];
+        this.opacities = new float[8];
     }
 
     /**
-     * Points the canvas at the graphics for a new frame, and forgets the last frame's clip, transform and cursor
-     * stacks.
+     * Points the canvas at the graphics for a new frame, and forgets the last frame's clip, transform, opacity,
+     * smoothing and cursor stacks. Opacity multiplies the graphics' own alpha composite, if it has one.
      *
      * @param graphics the graphics to draw on; its current transform maps UI units to pixels
      */
@@ -100,7 +161,13 @@ public final class SwingCanvas implements Canvas {
         this.graphics = graphics;
         this.clips.clear();
         this.transforms.clear();
+        this.smoothingDepth = 0;
+        this.opacityDepth = 0;
+        this.baseComposite = graphics.getComposite();
+        this.baseOpacity = this.baseComposite instanceof final AlphaComposite alpha
+                && alpha.getRule() == AlphaComposite.SRC_OVER ? alpha.getAlpha() : 1f;
         this.requestedCursor = null;
+        graphics.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
     }
 
     /**
@@ -126,12 +193,12 @@ public final class SwingCanvas implements Canvas {
      * pixels and shapes laid out symmetrically in UI units stay symmetric at any scale. A rotated or sheared transform
      * gets the rectangle unchanged.
      */
-    private Shape snapped(final Rect rect) {
+    private Rectangle2D snapped(final Rect rect) {
         final AffineTransform transform = this.graphics.getTransform();
         final double scaleX = transform.getScaleX();
         final double scaleY = transform.getScaleY();
         if (transform.getShearX() != 0d || transform.getShearY() != 0d || scaleX == 0d || scaleY == 0d) {
-            return rectangle(rect);
+            return new Rectangle2D.Float(rect.x(), rect.y(), rect.width(), rect.height());
         }
         final double translateX = transform.getTranslateX();
         final double translateY = transform.getTranslateY();
@@ -249,6 +316,19 @@ public final class SwingCanvas implements Canvas {
     }
 
     @Override
+    public void pushRoundClip(final Rect rect, final float radius) {
+        this.clips.add(Optional.ofNullable(this.graphics.getClip()));
+        final Rectangle2D bounds = this.snapped(rect);
+        final float r = radius(rect, radius);
+        if (r <= 0f) {
+            this.graphics.clip(bounds);
+            return;
+        }
+        this.graphics.clip(new RoundRectangle2D.Double(bounds.getX(), bounds.getY(), bounds.getWidth(),
+                bounds.getHeight(), 2d * r, 2d * r));
+    }
+
+    @Override
     public void popClip() {
         this.graphics.setClip(this.clips.removeLast().orElse(null));
     }
@@ -268,6 +348,428 @@ public final class SwingCanvas implements Canvas {
     @Override
     public void popTransform() {
         this.graphics.setTransform(this.transforms.pop());
+    }
+
+    @Override
+    public void pushOpacity(final float opacity) {
+        if (this.opacityDepth == this.opacities.length) {
+            this.opacities = Arrays.copyOf(this.opacities, this.opacityDepth * 2);
+        }
+        final float factor = this.opacity() * opacity;
+        this.opacities[this.opacityDepth++] = factor;
+        this.graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER,
+                Math.clamp(factor * this.baseOpacity, 0f, 1f)));
+    }
+
+    @Override
+    public void popOpacity() {
+        if (this.opacityDepth == 0) {
+            return;
+        }
+        this.opacityDepth--;
+        this.graphics.setComposite(this.opacityDepth == 0
+                ? this.baseComposite
+                : AlphaComposite.getInstance(AlphaComposite.SRC_OVER,
+                        Math.clamp(this.opacity() * this.baseOpacity, 0f, 1f)));
+    }
+
+    private float opacity() {
+        return this.opacityDepth == 0 ? 1f : this.opacities[this.opacityDepth - 1];
+    }
+
+    @Override
+    public void pushSmoothing(final boolean smooth) {
+        if (this.smoothingDepth == this.smoothing.length) {
+            this.smoothing = Arrays.copyOf(this.smoothing, this.smoothingDepth * 2);
+        }
+        this.smoothing[this.smoothingDepth++] = smooth;
+    }
+
+    @Override
+    public void popSmoothing() {
+        if (this.smoothingDepth > 0) {
+            this.smoothingDepth--;
+        }
+    }
+
+    /**
+     * Sets the color and anti-aliasing for a shape.
+     */
+    private void shapeColor(final int argb) {
+        final boolean smooth = this.smoothingDepth == 0 || this.smoothing[this.smoothingDepth - 1];
+        this.graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                smooth ? RenderingHints.VALUE_ANTIALIAS_ON : RenderingHints.VALUE_ANTIALIAS_OFF);
+        this.graphics.setColor(new Color(argb, true));
+    }
+
+    @Override
+    public void fillGradient(final Rect rect, final Gradient gradient) {
+        if (!(rect.width() > 0f) || !(rect.height() > 0f)) {
+            return;
+        }
+        final double cos = Math.cos(gradient.angleRadians());
+        final double sin = Math.sin(gradient.angleRadians());
+        final double half = (Math.abs(rect.width() * cos) + Math.abs(rect.height() * sin)) / 2d;
+        final double centerX = rect.x() + rect.width() / 2d;
+        final double centerY = rect.y() + rect.height() / 2d;
+        final List<Gradient.Stop> stops = gradient.stops();
+        final float[] fractions = new float[stops.size() + 2];
+        final Color[] colors = new Color[stops.size() + 2];
+        int count = 0;
+        fractions[count] = 0f;
+        colors[count++] = new Color(gradient.colorAt(0f), true);
+        for (final Gradient.Stop stop : stops) {
+            if (stop.offset() > 0f && stop.offset() < 1f) {
+                // Java2D needs rising fractions, so a stop at the same offset as the one before makes a hard step
+                final float fraction = Math.max(stop.offset(), fractions[count - 1] + STOP_GAP);
+                if (fraction < 1f) {
+                    fractions[count] = fraction;
+                    colors[count++] = new Color(stop.argb(), true);
+                }
+            }
+        }
+        fractions[count] = 1f;
+        colors[count++] = new Color(gradient.colorAt(1f), true);
+        this.shapeColor(gradient.colorAt(0f));
+        this.graphics.setPaint(new LinearGradientPaint(
+                new Point2D.Double(centerX - half * cos, centerY - half * sin),
+                new Point2D.Double(centerX + half * cos, centerY + half * sin),
+                Arrays.copyOf(fractions, count), Arrays.copyOf(colors, count)));
+        this.graphics.fill(this.snapped(rect));
+    }
+
+    @Override
+    public void line(final float x1, final float y1, final float x2, final float y2, final Stroke stroke,
+                     final int argb) {
+        if (!(stroke.width() > 0f) || (argb >>> 24) == 0) {
+            return;
+        }
+        this.shapeColor(argb);
+        this.graphics.setStroke(this.basic(stroke));
+        this.graphics.draw(new Line2D.Float(x1, y1, x2, y2));
+    }
+
+    @Override
+    public void polyline(final float[] points, final int count, final Stroke stroke, final int argb) {
+        if (!(stroke.width() > 0f) || (argb >>> 24) == 0 || count < 2) {
+            return;
+        }
+        final Path2D.Float path = this.polyline;
+        path.reset();
+        path.moveTo(points[0], points[1]);
+        for (int i = 1; i < count; i++) {
+            path.lineTo(points[2 * i], points[2 * i + 1]);
+        }
+        this.shapeColor(argb);
+        this.graphics.setStroke(this.basic(stroke));
+        this.graphics.draw(path);
+        path.reset();
+    }
+
+    @Override
+    public void fillRoundRect(final Rect rect, final float radius, final int argb) {
+        if ((argb >>> 24) == 0 || !(rect.width() > 0f) || !(rect.height() > 0f)) {
+            return;
+        }
+        final float r = radius(rect, radius);
+        this.shapeColor(argb);
+        this.graphics.fill(r > 0f
+                ? new RoundRectangle2D.Float(rect.x(), rect.y(), rect.width(), rect.height(), 2f * r, 2f * r)
+                : rectangle(rect));
+    }
+
+    @Override
+    public void strokeRect(final Rect rect, final float radius, final Stroke stroke, final int argb) {
+        final float width = stroke.width();
+        if (!(width > 0f) || (argb >>> 24) == 0 || !(rect.width() > 0f) || !(rect.height() > 0f)) {
+            return;
+        }
+        final float r = radius(rect, radius);
+        if (2f * width >= Math.min(rect.width(), rect.height())) {
+            this.fillRoundRect(rect, r, argb);
+            return;
+        }
+        // The stroke is centered on its path, so the path runs half the width inside the rectangle
+        final float inset = width / 2f;
+        final float inner = Math.max(0f, r - inset);
+        final float x = rect.x() + inset;
+        final float y = rect.y() + inset;
+        final float w = rect.width() - width;
+        final float h = rect.height() - width;
+        this.shapeColor(argb);
+        this.graphics.setStroke(this.inside(width));
+        this.graphics.draw(inner > 0f
+                ? new RoundRectangle2D.Float(x, y, w, h, 2f * inner, 2f * inner)
+                : new Rectangle2D.Float(x, y, w, h));
+    }
+
+    @Override
+    public void fillEllipse(final Rect oval, final int argb) {
+        if ((argb >>> 24) == 0 || !(oval.width() > 0f) || !(oval.height() > 0f)) {
+            return;
+        }
+        this.shapeColor(argb);
+        this.graphics.fill(new Ellipse2D.Float(oval.x(), oval.y(), oval.width(), oval.height()));
+    }
+
+    @Override
+    public void strokeEllipse(final Rect oval, final Stroke stroke, final int argb) {
+        final float width = stroke.width();
+        if (!(width > 0f) || (argb >>> 24) == 0 || !(oval.width() > 0f) || !(oval.height() > 0f)) {
+            return;
+        }
+        if (2f * width >= Math.min(oval.width(), oval.height())) {
+            this.fillEllipse(oval, argb);
+            return;
+        }
+        final float inset = width / 2f;
+        this.shapeColor(argb);
+        this.graphics.setStroke(this.inside(width));
+        this.graphics.draw(new Ellipse2D.Float(oval.x() + inset, oval.y() + inset, oval.width() - width,
+                oval.height() - width));
+    }
+
+    @Override
+    public void strokeArc(final Rect oval, final float startRadians, final float sweepRadians, final Stroke stroke,
+                          final int argb) {
+        final float width = stroke.width();
+        if (!(width > 0f) || (argb >>> 24) == 0 || !(oval.width() > 0f) || !(oval.height() > 0f)) {
+            return;
+        }
+        final float inset = Math.min(width, Math.min(oval.width(), oval.height())) / 2f;
+        // Strata turns clockwise on screen from 3 o'clock in radians; Arc2D turns counterclockwise in degrees
+        final Arc2D.Float arc = new Arc2D.Float(oval.x() + inset, oval.y() + inset, oval.width() - 2f * inset,
+                oval.height() - 2f * inset, (float) -Math.toDegrees(startRadians),
+                (float) -Math.toDegrees(sweepRadians), Arc2D.OPEN);
+        this.shapeColor(argb);
+        this.graphics.setStroke(this.basic(stroke));
+        this.graphics.draw(arc);
+    }
+
+    @Override
+    public void fillShape(final Shape shape, final int argb) {
+        if ((argb >>> 24) == 0) {
+            return;
+        }
+        this.shapeColor(argb);
+        this.graphics.fill(this.path(shape));
+    }
+
+    @Override
+    public void strokeShape(final Shape shape, final Stroke stroke, final int argb) {
+        if (!(stroke.width() > 0f) || (argb >>> 24) == 0) {
+            return;
+        }
+        this.shapeColor(argb);
+        this.graphics.setStroke(this.basic(stroke));
+        this.graphics.draw(this.path(shape));
+    }
+
+    @Override
+    public void shadow(final Rect rect, final float radius, final float blur, final int argb) {
+        if ((argb >>> 24) == 0 || !(rect.width() > 0f) || !(rect.height() > 0f)) {
+            return;
+        }
+        final AffineTransform transform = this.graphics.getTransform();
+        final boolean axisAligned = transform.getShearX() == 0d && transform.getShearY() == 0d
+                && transform.getScaleX() > 0d && transform.getScaleY() > 0d;
+        // The image is made in device pixels, so the blur stays smooth at any scale
+        final double scale = axisAligned ? transform.getScaleX() : Math.hypot(transform.getScaleX(),
+                transform.getShearY());
+        final int width = (int) Math.round(rect.width() * scale);
+        final int height = (int) Math.round(rect.height() * scale);
+        final int r = (int) Math.round(radius(rect, radius) * scale);
+        final int b = Math.max(1, (int) Math.round(blur * scale));
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        final ShadowKey key = new ShadowKey(width, height, r, b, argb);
+        final BufferedImage image = this.shadows.computeIfAbsent(key, SwingCanvas::shadowImage);
+        final int margin = shadowMargin(b);
+        if (axisAligned) {
+            final int x0 = (int) Math.round(rect.x() * transform.getScaleX() + transform.getTranslateX()) - margin;
+            final int y0 = (int) Math.round(rect.y() * transform.getScaleY() + transform.getTranslateY()) - margin;
+            this.graphics.setTransform(new AffineTransform());
+            try {
+                this.graphics.drawImage(image, x0, y0, null);
+            } finally {
+                this.graphics.setTransform(transform);
+            }
+            return;
+        }
+        final double unitMargin = margin / scale;
+        this.graphics.drawImage(image, (int) Math.round(rect.x() - unitMargin), (int) Math.round(rect.y() - unitMargin),
+                (int) Math.round(rect.width() + 2d * unitMargin), (int) Math.round(rect.height() + 2d * unitMargin),
+                null);
+    }
+
+    @Override
+    public void pixels(final PixelBuffer buffer, final Rect rect, final int tint) {
+        final PixelImage pixels = this.pixelImages.computeIfAbsent(buffer, PixelImage::new);
+        final BufferedImage image = pixels.image(buffer, tint);
+        final Object interpolation = this.graphics.getRenderingHint(RenderingHints.KEY_INTERPOLATION);
+        this.graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+        try {
+            this.drawImage(image, rect.x(), rect.y(), rect.right(), rect.bottom(), 0, 0, image.getWidth(),
+                    image.getHeight());
+        } finally {
+            if (interpolation != null) {
+                this.graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, interpolation);
+            }
+        }
+    }
+
+    /**
+     * Returns the Java2D stroke for a Strata stroke, with Java2D's default miter limit.
+     */
+    private BasicStroke basic(final Stroke stroke) {
+        return this.strokes.computeIfAbsent(stroke, key -> new BasicStroke(key.width(), switch (key.cap()) {
+            case BUTT -> BasicStroke.CAP_BUTT;
+            case ROUND -> BasicStroke.CAP_ROUND;
+            case SQUARE -> BasicStroke.CAP_SQUARE;
+        }, switch (key.join()) {
+            case MITER -> BasicStroke.JOIN_MITER;
+            case ROUND -> BasicStroke.JOIN_ROUND;
+            case BEVEL -> BasicStroke.JOIN_BEVEL;
+        }, 10f));
+    }
+
+    /**
+     * Returns the stroke for an outline drawn inside its shape, whose caps and joins do not apply.
+     */
+    private BasicStroke inside(final float width) {
+        return this.basic(Stroke.of(width));
+    }
+
+    /**
+     * Returns a shape as a Java2D path, made once per shape.
+     */
+    private Path2D.Float path(final Shape shape) {
+        return this.paths.computeIfAbsent(shape, key -> {
+            final Path2D.Float path = new Path2D.Float(Path2D.WIND_NON_ZERO);
+            key.walk(new Shape.Sink() {
+                @Override
+                public void moveTo(final float x, final float y) {
+                    path.moveTo(x, y);
+                }
+
+                @Override
+                public void lineTo(final float x, final float y) {
+                    path.lineTo(x, y);
+                }
+
+                @Override
+                public void quadTo(final float cx, final float cy, final float x, final float y) {
+                    path.quadTo(cx, cy, x, y);
+                }
+
+                @Override
+                public void cubicTo(final float c1x, final float c1y, final float c2x, final float c2y,
+                                    final float x, final float y) {
+                    path.curveTo(c1x, c1y, c2x, c2y, x, y);
+                }
+
+                @Override
+                public void close() {
+                    path.closePath();
+                }
+            });
+            return path;
+        });
+    }
+
+    /**
+     * Returns a corner radius limited to 0 and half the rectangle's shorter side.
+     */
+    private static float radius(final Rect rect, final float radius) {
+        return Math.clamp(radius, 0f, Math.max(0f, Math.min(rect.width(), rect.height()) / 2f));
+    }
+
+    /**
+     * Returns the box radius of each of the three passes that blur a shadow fading over {@code blur} pixels: the
+     * shape is grown by half the blur, and the passes spread it over half the blur each way.
+     */
+    private static int boxRadius(final int blur) {
+        return Math.max(1, Math.round(blur / 6f));
+    }
+
+    /**
+     * Returns how many pixels a shadow image reaches past the rectangle on each side.
+     */
+    private static int shadowMargin(final int blur) {
+        return (blur + 1) / 2 + 3 * boxRadius(blur) + 1;
+    }
+
+    /**
+     * Makes a shadow image: the rectangle grown by half the blur, blurred three times with a box blur, in the
+     * key's color.
+     */
+    private static BufferedImage shadowImage(final ShadowKey key) {
+        final int margin = shadowMargin(key.blur());
+        final int width = key.width() + 2 * margin;
+        final int height = key.height() + 2 * margin;
+        final BufferedImage mask = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        final Graphics2D g = mask.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(Color.WHITE);
+            final float grow = key.blur() / 2f;
+            final float r = key.radius() + grow;
+            g.fill(new RoundRectangle2D.Float(margin - grow, margin - grow, key.width() + 2f * grow,
+                    key.height() + 2f * grow, 2f * r, 2f * r));
+        } finally {
+            g.dispose();
+        }
+        final int[] alpha = new int[width * height];
+        final int[] argb = mask.getRGB(0, 0, width, height, null, 0, width);
+        for (int i = 0; i < alpha.length; i++) {
+            alpha[i] = argb[i] >>> 24;
+        }
+        final int box = boxRadius(key.blur());
+        final int[] scratch = new int[alpha.length];
+        for (int pass = 0; pass < 3; pass++) {
+            boxBlur(alpha, scratch, width, height, box, true);
+            boxBlur(scratch, alpha, width, height, box, false);
+        }
+        final int color = key.argb() & 0xFFFFFF;
+        final int strength = key.argb() >>> 24;
+        for (int i = 0; i < alpha.length; i++) {
+            argb[i] = ((alpha[i] * strength / 255) << 24) | color;
+        }
+        final BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        image.setRGB(0, 0, width, height, argb, 0, width);
+        return image;
+    }
+
+    /**
+     * Averages each value with its neighbors within a radius along rows or columns, counting values past the edge
+     * as 0.
+     */
+    private static void boxBlur(final int[] source, final int[] target, final int width, final int height,
+                                final int radius, final boolean horizontal) {
+        final int lines = horizontal ? height : width;
+        final int length = horizontal ? width : height;
+        final int step = horizontal ? 1 : width;
+        final int window = 2 * radius + 1;
+        for (int line = 0; line < lines; line++) {
+            final int start = horizontal ? line * width : line;
+            int sum = 0;
+            for (int i = 0; i < Math.min(radius, length); i++) {
+                sum += source[start + i * step];
+            }
+            for (int i = 0; i < length; i++) {
+                final int incoming = i + radius;
+                if (incoming < length) {
+                    sum += source[start + incoming * step];
+                }
+                final int outgoing = i - radius - 1;
+                if (outgoing >= 0) {
+                    sum -= source[start + outgoing * step];
+                }
+                target[start + i * step] = sum / window;
+            }
+        }
     }
 
     @Override
@@ -375,5 +877,44 @@ public final class SwingCanvas implements Canvas {
     }
 
     private record TintKey(SpriteId sprite, int tint) {
+    }
+
+    /**
+     * A shadow image's size, corner radius and blur in device pixels, and its color.
+     */
+    private record ShadowKey(int width, int height, int radius, int blur, int argb) {
+    }
+
+    /**
+     * The image a pixel buffer draws from, which shares the buffer's array, and its last tinted copy.
+     */
+    private static final class PixelImage {
+        private final BufferedImage image;
+        private BufferedImage tinted;
+        private int tint;
+        private long version;
+
+        PixelImage(final PixelBuffer buffer) {
+            final int width = buffer.width();
+            final int height = buffer.height();
+            // An image over the caller's array is never cached elsewhere, so new pixels show on the next draw
+            final DataBufferInt data = new DataBufferInt(buffer.array(), width * height);
+            final ColorModel model = ColorModel.getRGBdefault();
+            final WritableRaster raster = Raster.createPackedRaster(data, width, height, width,
+                    new int[] {0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000}, null);
+            this.image = new BufferedImage(model, raster, false, null);
+        }
+
+        BufferedImage image(final PixelBuffer buffer, final int tint) {
+            if (tint == 0xFFFFFFFF) {
+                return this.image;
+            }
+            if (this.tinted == null || this.tint != tint || this.version != buffer.version()) {
+                this.tinted = SwingCanvas.tint(this.image, tint);
+                this.tint = tint;
+                this.version = buffer.version();
+            }
+            return this.tinted;
+        }
     }
 }

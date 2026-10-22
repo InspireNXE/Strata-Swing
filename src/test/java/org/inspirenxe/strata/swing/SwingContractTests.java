@@ -66,6 +66,16 @@ class SwingContractTests {
         protected TextMetrics metrics() {
             return METRICS;
         }
+
+        @Override
+        protected boolean drawsShapes() {
+            return true;
+        }
+
+        @Override
+        protected boolean drawsPixels() {
+            return true;
+        }
     }
 
     /**

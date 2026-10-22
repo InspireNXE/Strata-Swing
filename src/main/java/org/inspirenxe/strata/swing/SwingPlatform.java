@@ -53,7 +53,9 @@ import javax.swing.SwingUtilities;
  *     <li>Themes named by id come from a {@link SwingThemeSource}, which reads theme files from the class
  *     path.</li>
  *     <li>{@link Capabilities#monospaceFont()} is true, since the metrics hold a monospaced font, and
- *     {@link Capabilities#slicesSprites()} is false, since Swing stores no slicing with its images.</li>
+ *     {@link Capabilities#slicesSprites()} is false, since Swing stores no slicing with its images.
+ *     {@link Capabilities#drawsShapes()} is true: {@link SwingCanvas} draws shapes, gradients at an angle and
+ *     shadows with Java2D.</li>
  *     <li>The UI thread is the Swing event thread: {@link #uiExecutor()} is {@link SwingUtilities#invokeLater} and
  *     {@link #uiThreadCheck()} is {@link SwingUtilities#isEventDispatchThread}.</li>
  *     <li>Shortcuts use Command where the toolkit's menu shortcut key is Meta, as on macOS, and Control elsewhere.
@@ -64,7 +66,7 @@ import javax.swing.SwingUtilities;
  * icon, at its pixel size.</p>
  */
 public final class SwingPlatform implements Platform {
-    private static final Capabilities CAPABILITIES = new Capabilities(true, true);
+    private static final Capabilities CAPABILITIES = new Capabilities(true, true, false, true);
     private static final Optional<Executor> UI_EXECUTOR = Optional.of(SwingUtilities::invokeLater);
     private static final Optional<BooleanSupplier> UI_THREAD_CHECK =
             Optional.of(SwingUtilities::isEventDispatchThread);
