@@ -302,15 +302,17 @@ public final class StrataPanel extends JPanel {
         if (kind == null) {
             return Cursor.getDefaultCursor();
         }
-        return Cursor.getPredefinedCursor(switch (kind) {
-            case ARROW, NOT_ALLOWED -> Cursor.DEFAULT_CURSOR;
-            case TEXT -> Cursor.TEXT_CURSOR;
-            case HAND -> Cursor.HAND_CURSOR;
-            case CROSSHAIR -> Cursor.CROSSHAIR_CURSOR;
-            case RESIZE_HORIZONTAL -> Cursor.E_RESIZE_CURSOR;
-            case RESIZE_VERTICAL -> Cursor.N_RESIZE_CURSOR;
-            case RESIZE_ALL -> Cursor.MOVE_CURSOR;
-        });
+        return switch (kind) {
+            case ARROW, NOT_ALLOWED -> Cursor.getDefaultCursor();
+            case TEXT -> Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR);
+            case HAND -> Cursor.getPredefinedCursor(Cursor.HAND_CURSOR);
+            case CROSSHAIR -> Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR);
+            case RESIZE_HORIZONTAL -> Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR);
+            case RESIZE_VERTICAL -> Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR);
+            case RESIZE_ALL -> Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR);
+            // Kinds with no mapping yet show their fallback
+            default -> cursorFor(kind.fallback());
+        };
     }
 
     /**
