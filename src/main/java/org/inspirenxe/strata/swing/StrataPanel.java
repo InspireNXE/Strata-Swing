@@ -21,6 +21,8 @@ import org.inspirenxe.strata.api.input.Key;
 import org.inspirenxe.strata.api.input.KeyAction;
 import org.inspirenxe.strata.api.input.ScrollKind;
 import org.inspirenxe.strata.api.input.TextInputKind;
+import org.inspirenxe.strata.api.geometry.Size;
+import org.inspirenxe.strata.api.screen.Screen;
 import org.inspirenxe.strata.api.screen.ScreenController;
 import org.inspirenxe.strata.api.theme.Theme;
 import org.inspirenxe.strata.core.StrataCore;
@@ -31,10 +33,14 @@ import org.inspirenxe.strata.spi.TextInputSink;
 
 import java.awt.Color;
 import java.awt.Cursor;
+import java.awt.Dialog;
 import java.awt.Dimension;
+import java.awt.Frame;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Insets;
 import java.awt.RenderingHints;
+import java.awt.Window;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.KeyAdapter;
@@ -42,8 +48,14 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.awt.event.WindowListener;
+import javax.swing.JDialog;
+import javax.swing.JFrame;
 import javax.swing.JPanel;
 import javax.swing.Timer;
+import javax.swing.WindowConstants;
 
 /**
  * A Swing component that shows a stack of Strata screens. Add it to a window and open screens on
@@ -82,6 +94,16 @@ import javax.swing.Timer;
  *     what is typed. They come back on when focus moves to another field or leaves the fields.</li>
  * </ul>
  *
+ * <p>The panel's preferred size, which {@link Window#pack()} reads, is what the top screen's content asks for, in
+ * pixels at the panel's scale, and 960 by 600 pixels while no screen is open. A size given with
+ * {@link #setPreferredSize} wins, as for any Swing component. The panel revalidates when the top screen changes, so
+ * a later {@code pack()} sees the new size.</p>
+ *
+ * <p>Give the panel its window with {@link #manageWindow(Window)} so that the window's close button asks the screens
+ * first and its title follows theirs. An application that keeps its own window listener does the same itself: it
+ * sets the window to do nothing on close, calls {@code screens().requestClose()} when the window is closing, and
+ * disposes the window only when that returns true.</p>
+ *
  * <p>Use it on the Swing event thread only. The platform's UI thread is the event thread, so work from other threads
  * goes through {@code Strata.uiThread()} or the factory's {@code uiThread()}, and a screen opened from another
  * thread is handed to the event thread.</p>
@@ -115,6 +137,19 @@ public final class StrataPanel extends JPanel {
      * Whether a field that takes secret text has focus, so input methods are off.
      */
     private boolean secretInput;
+    /**
+     * The top screen at the last paint, so a change revalidates the panel.
+     */
+    private transient Screen shownScreen;
+    /**
+     * The window {@link #manageWindow} gave the panel, or {@code null}.
+     */
+    private transient Window window;
+    /**
+     * The window's own title, shown while the top screen has none.
+     */
+    private String windowTitle;
+    private final transient WindowListener windowCloser;
 
     /**
      * Creates a panel with an empty screen stack. Sprites load from this class's class loader with
@@ -153,8 +188,14 @@ public final class StrataPanel extends JPanel {
         this.frameTimer.setRepeats(false);
         this.scale = scale;
 
+        this.windowCloser = new WindowAdapter() {
+            @Override
+            public void windowClosing(final WindowEvent event) {
+                StrataPanel.this.closeWindow();
+            }
+        };
+
         this.setBackground(new Color(0xFF1E1F22, true));
-        this.setPreferredSize(new Dimension(960, 600));
         this.setFocusable(true);
         // Strata does its own tab navigation
         this.setFocusTraversalKeysEnabled(false);
@@ -239,6 +280,99 @@ public final class StrataPanel extends JPanel {
     }
 
     /**
+     * Lets the panel run a window. The window's close button then asks the screens with
+     * {@link ScreenStack#requestClose()} and disposes the window only when every screen agreed, and the title of a
+     * {@link Frame} or {@link Dialog} follows the top screen's {@linkplain ScreenStack#title() title}, translated,
+     * shown again whenever it changes. While the top screen has no title, or no screen is open, the window keeps the
+     * title it had when it was given. A {@link JFrame} or {@link JDialog} is set to do nothing on close, since the
+     * panel decides.
+     *
+     * <p>The panel need not be inside the window. Giving it another window lets go of the first, which keeps the
+     * title it shows then.</p>
+     *
+     * @param window the window
+     */
+    public void manageWindow(final Window window) {
+        if (this.window != null) {
+            this.window.removeWindowListener(this.windowCloser);
+        }
+        this.window = window;
+        this.windowTitle = switch (window) {
+            case final Frame frame -> frame.getTitle();
+            case final Dialog dialog -> dialog.getTitle();
+            default -> "";
+        };
+        if (window instanceof final JFrame frame) {
+            frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        } else if (window instanceof final JDialog dialog) {
+            dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        }
+        window.addWindowListener(this.windowCloser);
+        this.showTitle();
+    }
+
+    /**
+     * Asks the screens to close, as the managed window's close button does, and disposes the window if they all
+     * agreed.
+     *
+     * @return true if the stack is empty afterwards
+     */
+    boolean closeWindow() {
+        if (!this.screens.requestClose()) {
+            return false;
+        }
+        if (this.window != null) {
+            this.window.dispose();
+        }
+        return true;
+    }
+
+    /**
+     * Returns the title the managed window shows now: the top screen's, or the window's own while it has none.
+     *
+     * @return the title
+     */
+    String shownTitle() {
+        final String title = this.screens.title().plain();
+        return title.isEmpty() && this.windowTitle != null ? this.windowTitle : title;
+    }
+
+    private void showTitle() {
+        if (this.window == null) {
+            return;
+        }
+        final String title = this.shownTitle();
+        if (this.window instanceof final Frame frame && !title.equals(frame.getTitle())) {
+            frame.setTitle(title);
+        } else if (this.window instanceof final Dialog dialog && !title.equals(dialog.getTitle())) {
+            dialog.setTitle(title);
+        }
+    }
+
+    /**
+     * Returns what the top screen's content asks for, in pixels at the panel's scale plus the insets, or 960 by 600
+     * pixels while no screen is open. A size set with {@link #setPreferredSize} wins.
+     */
+    @Override
+    public Dimension getPreferredSize() {
+        // Swing may ask before the constructor has finished
+        if (this.isPreferredSizeSet() || this.screens == null) {
+            return super.getPreferredSize();
+        }
+        if (this.screens.isEmpty()) {
+            return new Dimension(960, 600);
+        }
+        final Size size = this.screens.preferredSize(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY);
+        final Insets insets = this.getInsets();
+        return new Dimension(pixels(size.width() * this.scale) + insets.left + insets.right,
+                pixels(size.height() * this.scale) + insets.top + insets.bottom);
+    }
+
+    private static int pixels(final float value) {
+        return (int) Math.min(Integer.MAX_VALUE, Math.ceil(value));
+    }
+
+    /**
      * Returns whether input methods are off because a field that takes secret text has focus.
      *
      * @return true while a secret field has focus
@@ -315,6 +449,12 @@ public final class StrataPanel extends JPanel {
         }
         this.setCursor(cursorFor(this.canvas.requestedCursor()));
         this.scheduleNextFrame();
+        final Screen top = this.screens.top().orElse(null);
+        if (top != this.shownScreen) {
+            this.shownScreen = top;
+            this.revalidate();
+        }
+        this.showTitle();
     }
 
     /**
