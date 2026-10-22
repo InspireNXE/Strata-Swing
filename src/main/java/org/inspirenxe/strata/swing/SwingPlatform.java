@@ -20,6 +20,7 @@ import org.inspirenxe.strata.spi.Capabilities;
 import org.inspirenxe.strata.spi.Clipboard;
 import org.inspirenxe.strata.spi.Clock;
 import org.inspirenxe.strata.spi.Conventions;
+import org.inspirenxe.strata.spi.FileDialogSource;
 import org.inspirenxe.strata.spi.Platform;
 import org.inspirenxe.strata.spi.TextInputSink;
 import org.inspirenxe.strata.spi.ThemeSource;
@@ -58,6 +59,8 @@ import javax.swing.SwingUtilities;
  *     shadows with Java2D.</li>
  *     <li>The UI thread is the Swing event thread: {@link #uiExecutor()} is {@link SwingUtilities#invokeLater} and
  *     {@link #uiThreadCheck()} is {@link SwingUtilities#isEventDispatchThread}.</li>
+ *     <li>File dialogs are the system's, through {@link java.awt.FileDialog}, owned by the active window; a folder
+ *     dialog is a {@link javax.swing.JFileChooser} except on macOS. Headless there are none.</li>
  *     <li>Shortcuts use Command where the toolkit's menu shortcut key is Meta, as on macOS, and Control elsewhere.
  *     In a headless JVM the operating system's name decides. Buttons act on release and mnemonics are on.</li>
  * </ul>
@@ -75,6 +78,7 @@ public final class SwingPlatform implements Platform {
     private final Clipboard clipboard;
     private final ThemeSource themes;
     private final Conventions conventions;
+    private final Optional<FileDialogSource> fileDialogs;
 
     /**
      * Creates the platform with a {@link SwingThemeSource} on this class's class loader.
@@ -97,6 +101,7 @@ public final class SwingPlatform implements Platform {
         this.themes = Objects.requireNonNull(themes, "themes");
         this.clipboard = GraphicsEnvironment.isHeadless() ? Clipboard.NONE : new SystemClipboard();
         this.conventions = new Conventions(false, SwingPlatform.shortcutModifier(), true);
+        this.fileDialogs = GraphicsEnvironment.isHeadless() ? Optional.empty() : Optional.of(new SwingFileDialogs());
     }
 
     /**
@@ -162,6 +167,11 @@ public final class SwingPlatform implements Platform {
     @Override
     public Optional<BooleanSupplier> uiThreadCheck() {
         return UI_THREAD_CHECK;
+    }
+
+    @Override
+    public Optional<FileDialogSource> fileDialogs() {
+        return this.fileDialogs;
     }
 
     /**

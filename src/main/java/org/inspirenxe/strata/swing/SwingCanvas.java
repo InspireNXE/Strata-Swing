@@ -88,7 +88,7 @@ import java.util.WeakHashMap;
  *     <li>A pixel buffer is drawn from an image that shares its array, so a new version needs no copy, with nearest
  *     neighbor scaling so that pixel art stays sharp. A tinted copy is made again when the version moves.</li>
  *     <li>The requested cursor is kept for the host component to apply after the frame; see
- *     {@link #requestedCursor()}.</li>
+ *     {@link #requestedCursor()}. {@link #showsCursor} answers for AWT's cursors and the ones the adapter draws.</li>
  * </ul>
  *
  * <p>Call {@link #begin(Graphics2D)} at the start of every frame. Not thread-safe; use it on the Swing event
@@ -790,6 +790,16 @@ public final class SwingCanvas implements Canvas {
     @Override
     public void requestCursor(final CursorKind cursor) {
         this.requestedCursor = cursor;
+    }
+
+    /**
+     * Answers true for the arrow, text, hand, crosshair, the resize kinds, the diagonals included, and wait, which
+     * AWT has, and for not allowed, progress, grab, grabbing, copy, no drop and help where the toolkit makes custom
+     * cursors, which a headless one does not.
+     */
+    @Override
+    public boolean showsCursor(final CursorKind cursor) {
+        return SwingCursors.shows(cursor);
     }
 
     /**

@@ -51,6 +51,7 @@ import java.awt.event.MouseWheelEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowListener;
+import java.util.Optional;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
@@ -474,26 +475,19 @@ public final class StrataPanel extends JPanel {
     }
 
     /**
-     * Maps a Strata cursor to the nearest AWT cursor. AWT has no "not allowed" cursor, so it shows the default.
+     * Maps a Strata cursor to its AWT cursor, or to its fallback's where the toolkit makes no custom cursors.
      *
      * @param kind the cursor, or {@code null} for the default
      * @return the AWT cursor
      */
     static Cursor cursorFor(final CursorKind kind) {
-        if (kind == null) {
-            return Cursor.getDefaultCursor();
+        CursorKind at = kind == null ? CursorKind.ARROW : kind;
+        Optional<Cursor> cursor = SwingCursors.cursor(at);
+        while (cursor.isEmpty()) {
+            at = at.fallback();
+            cursor = SwingCursors.cursor(at);
         }
-        return switch (kind) {
-            case ARROW, NOT_ALLOWED -> Cursor.getDefaultCursor();
-            case TEXT -> Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR);
-            case HAND -> Cursor.getPredefinedCursor(Cursor.HAND_CURSOR);
-            case CROSSHAIR -> Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR);
-            case RESIZE_HORIZONTAL -> Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR);
-            case RESIZE_VERTICAL -> Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR);
-            case RESIZE_ALL -> Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR);
-            // Kinds with no mapping yet show their fallback
-            default -> cursorFor(kind.fallback());
-        };
+        return cursor.get();
     }
 
     /**

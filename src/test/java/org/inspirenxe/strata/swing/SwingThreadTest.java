@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The Swing platform's UI thread, conventions and font ascent.
+ * The Swing platform's UI thread, conventions, file dialogs and font ascent.
  */
 class SwingThreadTest {
 
@@ -62,6 +62,12 @@ class SwingThreadTest {
         assertEquals(mac ? Modifier.SUPER : Modifier.CONTROL, conventions.shortcutModifier());
         assertTrue(conventions.mnemonics());
         assertFalse(conventions.activateOnPress());
+    }
+
+    @Test
+    void thereAreNoFileDialogsHeadless() {
+        // Tests run headless
+        assertTrue(new SwingPlatform(SwingTextMetrics.defaults()).fileDialogs().isEmpty());
     }
 
     @Test

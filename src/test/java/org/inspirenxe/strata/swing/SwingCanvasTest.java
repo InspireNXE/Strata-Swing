@@ -32,7 +32,9 @@ import java.nio.file.Path;
 import javax.imageio.ImageIO;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Swing-specific canvas behavior beyond the SPI contract: sprites, tints and nine-slice drawing, on images made for
@@ -178,9 +180,26 @@ class SwingCanvasTest {
     void cursorsMapToAwtCursors() {
         assertEquals(java.awt.Cursor.TEXT_CURSOR, StrataPanel.cursorFor(CursorKind.TEXT).getType());
         assertEquals(java.awt.Cursor.HAND_CURSOR, StrataPanel.cursorFor(CursorKind.HAND).getType());
+        assertEquals(java.awt.Cursor.NW_RESIZE_CURSOR, StrataPanel.cursorFor(CursorKind.RESIZE_DIAGONAL_DOWN).getType());
+        assertEquals(java.awt.Cursor.NE_RESIZE_CURSOR, StrataPanel.cursorFor(CursorKind.RESIZE_DIAGONAL_UP).getType());
+        assertEquals(java.awt.Cursor.WAIT_CURSOR, StrataPanel.cursorFor(CursorKind.WAIT).getType());
         assertEquals(java.awt.Cursor.DEFAULT_CURSOR, StrataPanel.cursorFor(null).getType());
         for (final CursorKind kind : CursorKind.values()) {
             StrataPanel.cursorFor(kind);
         }
+    }
+
+    @Test
+    void theCanvasShowsWhatAwtHasAndFallsBackHeadless() {
+        final SwingContractTests.ImageSurface surface = surface(4, 4);
+        for (final CursorKind kind : java.util.List.of(CursorKind.ARROW, CursorKind.TEXT, CursorKind.HAND,
+                CursorKind.CROSSHAIR, CursorKind.RESIZE_HORIZONTAL, CursorKind.RESIZE_VERTICAL, CursorKind.RESIZE_ALL,
+                CursorKind.RESIZE_DIAGONAL_DOWN, CursorKind.RESIZE_DIAGONAL_UP, CursorKind.WAIT)) {
+            assertTrue(surface.canvas().showsCursor(kind), kind + " is one of AWT's");
+        }
+        // Tests run headless, where AWT makes no custom cursors, so the drawn ones show their fallback
+        assertFalse(surface.canvas().showsCursor(CursorKind.GRAB));
+        assertEquals(java.awt.Cursor.HAND_CURSOR, StrataPanel.cursorFor(CursorKind.GRAB).getType());
+        assertEquals(java.awt.Cursor.DEFAULT_CURSOR, StrataPanel.cursorFor(CursorKind.NO_DROP).getType());
     }
 }
