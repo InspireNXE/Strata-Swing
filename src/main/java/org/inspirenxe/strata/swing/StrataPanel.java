@@ -22,6 +22,10 @@ import org.inspirenxe.strata.api.input.KeyAction;
 import org.inspirenxe.strata.api.input.ScrollKind;
 import org.inspirenxe.strata.api.input.TextInputKind;
 import org.inspirenxe.strata.api.geometry.Size;
+import org.inspirenxe.strata.api.input.Modifier;
+import org.inspirenxe.strata.api.input.Modifiers;
+import org.inspirenxe.strata.api.transfer.DropEffect;
+import org.inspirenxe.strata.api.transfer.Transfer;
 import org.inspirenxe.strata.api.screen.Screen;
 import org.inspirenxe.strata.api.screen.ScreenController;
 import org.inspirenxe.strata.api.theme.Theme;
@@ -38,6 +42,15 @@ import java.awt.Dimension;
 import java.awt.Frame;
 import java.awt.Graphics;
 import java.awt.GraphicsConfiguration;
+import java.awt.GraphicsEnvironment;
+import java.awt.Point;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.dnd.DnDConstants;
+import java.awt.dnd.DropTarget;
+import java.awt.dnd.DropTargetDragEvent;
+import java.awt.dnd.DropTargetDropEvent;
+import java.awt.dnd.DropTargetEvent;
+import java.awt.dnd.DropTargetListener;
 import java.awt.Graphics2D;
 import java.awt.Insets;
 import java.awt.RenderingHints;
@@ -93,6 +106,11 @@ import javax.swing.WindowConstants;
  *     <li>Shift plus the vertical wheel scrolls horizontally.</li>
  *     <li>It consumes Alt and F10 key events, so they reach Strata without putting the window into its native menu
  *     mode, which on Windows would swallow wheel input until the key is pressed again.</li>
+ *     <li>It takes drops from other applications through AWT's drag and drop, in the formats
+ *     {@link SwingPlatform}'s clipboard holds. AWT reports no modifier keys during a drag, so they are read from the
+ *     drop action: Control when the user asks to copy what the source would move, and Control and Shift for a
+ *     link. Data is read when a component asks for it while the drag moves, where AWT allows, and all of it at the
+ *     drop. A headless JVM has no drag and drop.</li>
  *     <li>While a field that takes {@link TextInputKind#SECRET} text has focus, such as a password box, it turns
  *     input methods off on itself, as Swing's own password field does, so no composition window shows or keeps
  *     what is typed. They come back on when focus moves to another field or leaves the fields.</li>
@@ -224,6 +242,10 @@ public final class StrataPanel extends JPanel {
         this.screens.setFrameRequester(this::repaint);
         // The panel moved to a display with another scale
         this.addPropertyChangeListener("graphicsConfiguration", event -> this.updatePixelsPerUnit());
+        if (!GraphicsEnvironment.isHeadless()) {
+            this.setDropTarget(new DropTarget(this, DnDConstants.ACTION_COPY_OR_MOVE | DnDConstants.ACTION_LINK,
+                    new Drops(), true));
+        }
     }
 
     /**
@@ -431,6 +453,72 @@ public final class StrataPanel extends JPanel {
     }
 
     /**
+     * A drag from another application entered the panel.
+     *
+     * @param at where, in pixels
+     * @param flavors the flavors it offers
+     * @param reader reads a flavor, where AWT allows before the drop
+     * @param sourceActions the actions the source allows
+     * @param dropAction the action the user asks for
+     * @return the effect a component would take
+     */
+    Optional<DropEffect> dragEntered(final Point at, final DataFlavor[] flavors,
+                                     final SwingTransfers.FlavorReader reader, final int sourceActions,
+                                     final int dropAction) {
+        final java.util.Set<DropEffect> allowed = SwingTransfers.effects(sourceActions);
+        if (allowed.isEmpty()) {
+            return Optional.empty();
+        }
+        final Transfer transfer = SwingTransfers.transfer(flavors, reader, false);
+        return this.screens.dragEntered(at.x / this.scale, at.y / this.scale, transfer, allowed,
+                dragModifiers(sourceActions, dropAction));
+    }
+
+    /**
+     * A drag from another application moved over the panel, or the user changed the action it asks for.
+     *
+     * @param at where, in pixels
+     * @param sourceActions the actions the source allows
+     * @param dropAction the action the user asks for
+     * @return the effect a component would take
+     */
+    Optional<DropEffect> dragMoved(final Point at, final int sourceActions, final int dropAction) {
+        return this.screens.dragMoved(at.x / this.scale, at.y / this.scale, dragModifiers(sourceActions, dropAction));
+    }
+
+    /**
+     * Something from another application was dropped on the panel.
+     *
+     * @param at where, in pixels
+     * @param flavors the flavors it offers
+     * @param reader reads a flavor
+     * @param sourceActions the actions the source allows
+     * @param dropAction the action the user asks for
+     * @return the effect the target took
+     */
+    Optional<DropEffect> dropped(final Point at, final DataFlavor[] flavors, final SwingTransfers.FlavorReader reader,
+                                 final int sourceActions, final int dropAction) {
+        // AWT's data is valid only during the drop, so every value is read now
+        final Transfer transfer = SwingTransfers.transfer(flavors, reader, true);
+        return this.screens.dropped(at.x / this.scale, at.y / this.scale, transfer,
+                dragModifiers(sourceActions, dropAction));
+    }
+
+    /**
+     * Returns the modifiers a drop action stands for, since AWT reports none during a drag: Control and Shift for a
+     * link, Control for a copy where the source would also move, and none otherwise.
+     */
+    private static Modifiers dragModifiers(final int sourceActions, final int dropAction) {
+        if (dropAction == DnDConstants.ACTION_LINK) {
+            return Modifiers.NONE.with(Modifier.CONTROL).with(Modifier.SHIFT);
+        }
+        if (dropAction == DnDConstants.ACTION_COPY && (sourceActions & DnDConstants.ACTION_MOVE) != 0) {
+            return Modifiers.NONE.with(Modifier.CONTROL);
+        }
+        return Modifiers.NONE;
+    }
+
+    /**
      * Returns whether input methods are off because a field that takes secret text has focus.
      *
      * @return true while a secret field has focus
@@ -573,6 +661,58 @@ public final class StrataPanel extends JPanel {
                 StrataPanel.this.secretInput = secret;
                 StrataPanel.this.enableInputMethods(!secret);
             }
+        }
+    }
+
+    /**
+     * Hands AWT's drag and drop to the screens. AWT calls it on the event thread.
+     */
+    private final class Drops implements DropTargetListener {
+        @Override
+        public void dragEnter(final DropTargetDragEvent event) {
+            this.answer(event, StrataPanel.this.dragEntered(event.getLocation(), event.getCurrentDataFlavors(),
+                    flavor -> event.getTransferable().getTransferData(flavor), event.getSourceActions(),
+                    event.getDropAction()));
+        }
+
+        @Override
+        public void dragOver(final DropTargetDragEvent event) {
+            this.answer(event, StrataPanel.this.dragMoved(event.getLocation(), event.getSourceActions(),
+                    event.getDropAction()));
+        }
+
+        @Override
+        public void dropActionChanged(final DropTargetDragEvent event) {
+            this.dragOver(event);
+        }
+
+        @Override
+        public void dragExit(final DropTargetEvent event) {
+            StrataPanel.this.screens.dragExited();
+            StrataPanel.this.repaint();
+        }
+
+        @Override
+        public void drop(final DropTargetDropEvent event) {
+            event.acceptDrop(event.getDropAction());
+            boolean taken = false;
+            try {
+                taken = StrataPanel.this.dropped(event.getLocation(), event.getCurrentDataFlavors(),
+                        flavor -> event.getTransferable().getTransferData(flavor), event.getSourceActions(),
+                        event.getDropAction()).isPresent();
+            } finally {
+                event.dropComplete(taken);
+                StrataPanel.this.repaint();
+            }
+        }
+
+        private void answer(final DropTargetDragEvent event, final Optional<DropEffect> effect) {
+            if (effect.isPresent()) {
+                event.acceptDrag(SwingTransfers.action(effect.get()));
+            } else {
+                event.rejectDrag();
+            }
+            StrataPanel.this.repaint();
         }
     }
 

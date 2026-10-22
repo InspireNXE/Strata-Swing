@@ -16,6 +16,8 @@
 package org.inspirenxe.strata.swing;
 
 import org.inspirenxe.strata.api.input.Modifier;
+import org.inspirenxe.strata.api.transfer.DataFormat;
+import org.inspirenxe.strata.api.transfer.Transfer;
 import org.inspirenxe.strata.spi.Capabilities;
 import org.inspirenxe.strata.spi.Clipboard;
 import org.inspirenxe.strata.spi.Clock;
@@ -37,6 +39,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 import javax.swing.SwingUtilities;
 
 /**
@@ -44,7 +47,8 @@ import javax.swing.SwingUtilities;
  *
  * <ul>
  *     <li>Text is measured with the given {@link SwingTextMetrics}, which the canvas also draws with.</li>
- *     <li>The clipboard is the system clipboard. In a headless JVM there is none, and the clipboard is
+ *     <li>The clipboard is the system clipboard. It holds plain text, files, images and text in other MIME types,
+ *     with styled text going out as its plain text. In a headless JVM there is none, and the clipboard is
  *     {@link Clipboard#NONE}.</li>
  *     <li>The clock is {@link Clock#SYSTEM}.</li>
  *     <li>AWT delivers typed characters without being told, so text input needs no signal. A {@link StrataPanel}
@@ -101,7 +105,9 @@ public final class SwingPlatform implements Platform {
         SwingAppearances.install();
         this.textMetrics = textMetrics;
         this.themes = Objects.requireNonNull(themes, "themes");
-        this.clipboard = GraphicsEnvironment.isHeadless() ? Clipboard.NONE : new SystemClipboard();
+        this.clipboard = GraphicsEnvironment.isHeadless()
+                ? Clipboard.NONE
+                : new SystemClipboard(() -> Toolkit.getDefaultToolkit().getSystemClipboard());
         this.conventions = new Conventions(false, SwingPlatform.shortcutModifier(), true);
         this.fileDialogs = GraphicsEnvironment.isHeadless() ? Optional.empty() : Optional.of(new SwingFileDialogs());
     }
@@ -177,14 +183,26 @@ public final class SwingPlatform implements Platform {
     }
 
     /**
-     * The system clipboard. Reads and writes that fail (another program holds the clipboard, or it holds no text)
-     * read as empty and are dropped.
+     * An AWT clipboard, the system's unless a test gives another. Reads and writes that fail (another program holds
+     * the clipboard, or it holds no text) read as empty and are dropped. A transfer's values other than its text are
+     * read when first asked for.
      */
-    private static final class SystemClipboard implements Clipboard {
+    static final class SystemClipboard implements Clipboard {
+        private final Supplier<java.awt.datatransfer.Clipboard> clipboard;
+
+        /**
+         * Creates the clipboard.
+         *
+         * @param clipboard gives the AWT clipboard each time it is used
+         */
+        SystemClipboard(final Supplier<java.awt.datatransfer.Clipboard> clipboard) {
+            this.clipboard = clipboard;
+        }
+
         @Override
         public Optional<String> get() {
             try {
-                final java.awt.datatransfer.Clipboard system = Toolkit.getDefaultToolkit().getSystemClipboard();
+                final java.awt.datatransfer.Clipboard system = this.clipboard.get();
                 if (!system.isDataFlavorAvailable(DataFlavor.stringFlavor)) {
                     return Optional.empty();
                 }
@@ -198,9 +216,52 @@ public final class SwingPlatform implements Platform {
         public void set(final String text) {
             try {
                 final StringSelection selection = new StringSelection(text);
-                Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, selection);
+                this.clipboard.get().setContents(selection, selection);
             } catch (final IllegalStateException ignored) {
                 // Another application holds the clipboard; dropping the copy beats crashing the UI
+            }
+        }
+
+        @Override
+        public Optional<Transfer> getTransfer() {
+            try {
+                final java.awt.datatransfer.Clipboard system = this.clipboard.get();
+                final DataFlavor[] flavors = system.getAvailableDataFlavors();
+                // The text is read now, as get() reads it; the rest when a paste asks for it
+                final Optional<String> text = this.get();
+                final Transfer read = SwingTransfers.transfer(flavors, system::getData, false);
+                if (read.isEmpty()) {
+                    return Optional.empty();
+                }
+                final Transfer.Builder builder = Transfer.builder();
+                text.ifPresent(value -> builder.add(DataFormat.TEXT, value));
+                for (final DataFormat<?> format : read.formats()) {
+                    if (format != DataFormat.TEXT) {
+                        SystemClipboard.copy(builder, read, format);
+                    }
+                }
+                final Transfer transfer = builder.build();
+                return transfer.isEmpty() ? Optional.empty() : Optional.of(transfer);
+            } catch (final IllegalStateException e) {
+                return Optional.empty();
+            }
+        }
+
+        private static <T> void copy(final Transfer.Builder builder, final Transfer from,
+                                     final DataFormat<T> format) {
+            builder.supply(format, () -> from.get(format).orElse(null));
+        }
+
+        @Override
+        public void setTransfer(final Transfer transfer) {
+            final SwingTransfers.Selection selection = SwingTransfers.transferable(transfer);
+            if (selection.isEmpty()) {
+                return;
+            }
+            try {
+                this.clipboard.get().setContents(selection, selection);
+            } catch (final IllegalStateException ignored) {
+                // Another application holds the clipboard
             }
         }
     }
