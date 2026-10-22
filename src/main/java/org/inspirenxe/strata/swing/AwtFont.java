@@ -24,15 +24,18 @@ import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.font.FontRenderContext;
+import java.awt.font.TextAttribute;
 import java.awt.font.TextLayout;
 import java.awt.image.BufferedImage;
+import java.text.AttributedString;
 
 /**
  * A {@link SwingFont} that draws an AWT font. One base font is derived into plain, bold, italic and bold italic.
  *
  * <p>Widths are the advances of a {@link TextLayout} made with fractional metrics and antialiasing on, and drawing
  * uses the same layout, so text measures exactly as wide as it draws. The line height is the font's height (ascent,
- * descent and leading). Sizes are in UI units.</p>
+ * descent and leading). Sizes are in UI units. A right-to-left run is laid out with a right-to-left run direction,
+ * so Java2D orders, shapes and joins it.</p>
  */
 public final class AwtFont implements SwingFont {
     private final Font[] fonts;
@@ -115,6 +118,20 @@ public final class AwtFont implements SwingFont {
         graphics.setFont(this.font(span.style()));
         graphics.setColor(new Color(argb, true));
         this.layout(span).draw(graphics, x, baseline);
+    }
+
+    /**
+     * Draws the run laid out right to left, so Java2D orders it, mirrors its brackets and joins its letters.
+     */
+    @Override
+    public void drawRightToLeft(final Graphics2D graphics, final TextSpan span, final float x, final float baseline,
+                                final int argb) {
+        final AttributedString text = new AttributedString(span.text());
+        text.addAttribute(TextAttribute.FONT, this.font(span.style()));
+        text.addAttribute(TextAttribute.RUN_DIRECTION, TextAttribute.RUN_DIRECTION_RTL);
+        graphics.setFont(this.font(span.style()));
+        graphics.setColor(new Color(argb, true));
+        new TextLayout(text.getIterator(), this.context).draw(graphics, x, baseline);
     }
 
     private static int variant(final TextStyle style) {

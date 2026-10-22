@@ -65,4 +65,23 @@ public interface SwingFont {
      * @param argb the color
      */
     void draw(Graphics2D graphics, TextSpan span, float x, float baseline, int argb);
+
+    /**
+     * Draws a run of right-to-left text in one color: the span holds the run in logical order, and the font draws
+     * its first character at the right, joining letters where the script does, with its left edge at {@code x} and
+     * as wide as {@link #width} measures it. Underline, strikethrough and shadow are left to the caller.
+     *
+     * <p>The default draws the span with {@link #draw}, which suits a font whose drawing runs the bidirectional
+     * algorithm itself, as AWT's text layout does. A font that draws characters in the order given overrides it.</p>
+     *
+     * @param graphics the graphics to draw on; its transform maps UI units to pixels
+     * @param span the run; not empty
+     * @param x the left edge of the text
+     * @param baseline the baseline
+     * @param argb the color
+     */
+    default void drawRightToLeft(final Graphics2D graphics, final TextSpan span, final float x, final float baseline,
+                                 final int argb) {
+        this.draw(graphics, span, x, baseline, argb);
+    }
 }

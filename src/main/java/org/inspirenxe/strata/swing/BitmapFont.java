@@ -43,6 +43,9 @@ import java.util.Objects;
  * a quarter unit per unit above the baseline. Characters with no glyph and no fixed advance are measured and drawn
  * with the fallback font. When several sheets or advances name the same character, the first one added wins.</p>
  *
+ * <p>A right-to-left run draws its glyphs from the right with paired brackets mirrored, and hands the characters
+ * it has no glyph for to the fallback's own right-to-left drawing. Glyphs are never joined.</p>
+ *
  * <p>Tinted copies of the sheets are cached for the most recent {@value #TINT_CACHE} colors. Use it on the Swing
  * event thread.</p>
  */
@@ -168,6 +171,74 @@ public final class BitmapFont implements SwingFont {
                 graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, interpolation);
             }
         }
+    }
+
+    /**
+     * Draws the run from the right: each stretch of glyphs with its characters reversed and its brackets mirrored,
+     * and each stretch the fallback draws through the fallback's own right-to-left drawing.
+     */
+    @Override
+    public void drawRightToLeft(final Graphics2D graphics, final TextSpan span, final float x, final float baseline,
+                                final int argb) {
+        final String text = span.text();
+        float pen = x + this.width(span);
+        int index = 0;
+        while (index < text.length()) {
+            final int codePoint = text.codePointAt(index);
+            final int end = this.glyphs.containsKey(codePoint) ? this.glyphEnd(text, index) : this.runEnd(text, index);
+            final TextSpan run = new TextSpan(text.substring(index, end), span.style());
+            pen -= this.width(run);
+            if (this.glyphs.containsKey(codePoint)) {
+                this.draw(graphics, new TextSpan(BitmapFont.mirrored(run.text()), span.style()), pen, baseline, argb);
+            } else {
+                this.fallback.drawRightToLeft(graphics, run, pen, baseline, argb);
+            }
+            index = end;
+        }
+    }
+
+    /**
+     * Returns where a run of characters this font draws ends.
+     */
+    private int glyphEnd(final String text, final int start) {
+        int index = start;
+        while (index < text.length()) {
+            final int codePoint = text.codePointAt(index);
+            if (!this.glyphs.containsKey(codePoint)) {
+                break;
+            }
+            index += Character.charCount(codePoint);
+        }
+        return index;
+    }
+
+    /**
+     * Returns text with its characters in reverse order and paired brackets swapped, as a right-to-left run shows
+     * them.
+     */
+    private static String mirrored(final String text) {
+        final StringBuilder out = new StringBuilder(text.length());
+        int index = text.length();
+        while (index > 0) {
+            final int codePoint = text.codePointBefore(index);
+            index -= Character.charCount(codePoint);
+            out.appendCodePoint(switch (codePoint) {
+                case '(' -> ')';
+                case ')' -> '(';
+                case '[' -> ']';
+                case ']' -> '[';
+                case '{' -> '}';
+                case '}' -> '{';
+                case '<' -> '>';
+                case '>' -> '<';
+                case '\u00AB' -> '\u00BB';
+                case '\u00BB' -> '\u00AB';
+                case '\u2039' -> '\u203A';
+                case '\u203A' -> '\u2039';
+                default -> codePoint;
+            });
+        }
+        return out.toString();
     }
 
     /**

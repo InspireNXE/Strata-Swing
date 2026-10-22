@@ -292,6 +292,19 @@ public final class SwingCanvas implements Canvas {
 
     @Override
     public void text(final TextSpan span, final float x, final float y) {
+        this.drawText(span, x, y, false);
+    }
+
+    /**
+     * Draws a right-to-left run with {@link SwingFont#drawRightToLeft}, which orders and shapes it; a left-to-right
+     * one as {@link #text(TextSpan, float, float)} does.
+     */
+    @Override
+    public void text(final TextSpan span, final float x, final float y, final boolean rightToLeft) {
+        this.drawText(span, x, y, rightToLeft);
+    }
+
+    private void drawText(final TextSpan span, final float x, final float y, final boolean rightToLeft) {
         final TextStyle style = span.style();
         if ((style.color() >>> 24) == 0 || span.text().isEmpty()) {
             return;
@@ -300,9 +313,9 @@ public final class SwingCanvas implements Canvas {
         final SwingFont font = this.fonts.font(style);
         final float baseline = y + font.ascent(style);
         if (style.shadow()) {
-            font.draw(this.graphics, span, x + 1f, baseline + 1f, shadowOf(style.color()));
+            this.glyphs(font, span, x + 1f, baseline + 1f, shadowOf(style.color()), rightToLeft);
         }
-        font.draw(this.graphics, span, x, baseline, style.color());
+        this.glyphs(font, span, x, baseline, style.color(), rightToLeft);
 
         if (style.underline() || style.strikethrough()) {
             final float width = font.width(span);
@@ -313,6 +326,15 @@ public final class SwingCanvas implements Canvas {
             if (style.strikethrough()) {
                 this.graphics.fill(new Rectangle2D.Float(x, baseline - font.ascent(style) * 0.35f, width, 1f));
             }
+        }
+    }
+
+    private void glyphs(final SwingFont font, final TextSpan span, final float x, final float baseline, final int argb,
+                        final boolean rightToLeft) {
+        if (rightToLeft) {
+            font.drawRightToLeft(this.graphics, span, x, baseline, argb);
+        } else {
+            font.draw(this.graphics, span, x, baseline, argb);
         }
     }
 

@@ -56,7 +56,9 @@ import javax.swing.SwingUtilities;
  *     <li>{@link Capabilities#monospaceFont()} is true, since the metrics hold a monospaced font, and
  *     {@link Capabilities#slicesSprites()} is false, since Swing stores no slicing with its images.
  *     {@link Capabilities#drawsShapes()} is true: {@link SwingCanvas} draws shapes, gradients at an angle and
- *     shadows with Java2D.</li>
+ *     shadows with Java2D. {@link Capabilities#shapesRightToLeft()} is true: each
+ *     {@link SwingFont} draws right-to-left runs itself, through {@link SwingFont#drawRightToLeft}, and AWT's fonts
+ *     order, shape and join them.</li>
  *     <li>The UI thread is the Swing event thread: {@link #uiExecutor()} is {@link SwingUtilities#invokeLater} and
  *     {@link #uiThreadCheck()} is {@link SwingUtilities#isEventDispatchThread}.</li>
  *     <li>File dialogs are the system's, through {@link java.awt.FileDialog}, owned by the active window; a folder
@@ -69,7 +71,7 @@ import javax.swing.SwingUtilities;
  * icon, at its pixel size.</p>
  */
 public final class SwingPlatform implements Platform {
-    private static final Capabilities CAPABILITIES = new Capabilities(true, true, false, true);
+    private static final Capabilities CAPABILITIES = new Capabilities(true, true, false, true, true);
     private static final Optional<Executor> UI_EXECUTOR = Optional.of(SwingUtilities::invokeLater);
     private static final Optional<BooleanSupplier> UI_THREAD_CHECK =
             Optional.of(SwingUtilities::isEventDispatchThread);
