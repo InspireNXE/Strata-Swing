@@ -29,6 +29,10 @@ import java.util.function.Consumer;
 /**
  * Renders one frame of a screen to an image, with no window or display. Tests and the gallery's {@code --snapshot}
  * option use it to check layouts on headless machines.
+ *
+ * <p>The screen runs on the calling thread, which need not be the Swing event thread: each snapshot's stack takes the
+ * thread that drives it as its UI thread, so a snapshot can be taken from a test or a command line tool's main
+ * thread.</p>
  */
 public final class SwingSnapshot {
 
@@ -119,8 +123,8 @@ public final class SwingSnapshot {
     public static BufferedImage render(final SwingPlatform platform, final Screen screen, final Theme theme,
                                        final int width, final int height, final float scale,
                                        final SwingSprites sprites, final Consumer<ScreenStack> input) {
-        return draw(platform, StrataCore.createScreenStack(platform, theme), screen, width, height, scale, sprites,
-                input);
+        return draw(platform, StrataCore.createScreenStack(offscreen(platform), theme), screen, width, height, scale,
+                sprites, input);
     }
 
     /**
@@ -143,8 +147,15 @@ public final class SwingSnapshot {
     public static BufferedImage render(final SwingPlatform platform, final Screen screen, final ThemeRef theme,
                                        final int width, final int height, final float scale,
                                        final SwingSprites sprites, final Consumer<ScreenStack> input) {
-        return draw(platform, StrataCore.createScreenStack(platform, theme), screen, width, height, scale, sprites,
-                input);
+        return draw(platform, StrataCore.createScreenStack(offscreen(platform), theme), screen, width, height, scale,
+                sprites, input);
+    }
+
+    /**
+     * Returns the platform a snapshot's stack runs with: the given one, on whichever thread drives the stack.
+     */
+    private static HostPlatform offscreen(final SwingPlatform platform) {
+        return new HostPlatform(platform, platform.textInput(), false);
     }
 
     private static BufferedImage draw(final SwingPlatform platform, final ScreenStack screens, final Screen screen,

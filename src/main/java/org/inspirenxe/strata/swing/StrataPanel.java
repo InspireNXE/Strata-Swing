@@ -21,18 +21,12 @@ import org.inspirenxe.strata.api.input.Key;
 import org.inspirenxe.strata.api.input.KeyAction;
 import org.inspirenxe.strata.api.input.ScrollKind;
 import org.inspirenxe.strata.api.input.TextInputKind;
-import org.inspirenxe.strata.api.text.TextMetrics;
 import org.inspirenxe.strata.api.screen.ScreenController;
 import org.inspirenxe.strata.api.theme.Theme;
 import org.inspirenxe.strata.core.StrataCore;
-import org.inspirenxe.strata.spi.Capabilities;
-import org.inspirenxe.strata.spi.Clipboard;
-import org.inspirenxe.strata.spi.Clock;
 import org.inspirenxe.strata.spi.HeldKeys;
-import org.inspirenxe.strata.spi.Platform;
 import org.inspirenxe.strata.spi.ScreenStack;
 import org.inspirenxe.strata.spi.TextInputSink;
-import org.inspirenxe.strata.spi.ThemeSource;
 
 import java.awt.Color;
 import java.awt.Cursor;
@@ -86,7 +80,9 @@ import javax.swing.Timer;
  *     what is typed. They come back on when focus moves to another field or leaves the fields.</li>
  * </ul>
  *
- * <p>Use it on the Swing event thread only.</p>
+ * <p>Use it on the Swing event thread only. The platform's UI thread is the event thread, so work from other threads
+ * goes through {@code Strata.uiThread()} or the factory's {@code uiThread()}, and a screen opened from another
+ * thread is handed to the event thread.</p>
  */
 public final class StrataPanel extends JPanel {
     private static final long serialVersionUID = 1L;
@@ -142,7 +138,7 @@ public final class StrataPanel extends JPanel {
         if (!(scale > 0f)) {
             throw new IllegalArgumentException("Scale must be positive: " + scale);
         }
-        this.screens = StrataCore.createScreenStack(new PanelPlatform(platform, new SecretInputSink()), theme);
+        this.screens = StrataCore.createScreenStack(new HostPlatform(platform, new SecretInputSink(), true), theme);
         this.textMetrics = platform.textMetrics();
         this.canvas = new SwingCanvas(this.textMetrics, sprites);
         this.heldKeys = new HeldKeys();
@@ -208,7 +204,7 @@ public final class StrataPanel extends JPanel {
     static void clearDefault() {
         synchronized (StrataPanel.class) {
             defaultPanel = null;
-            StrataCore.setScreenController(null);
+            StrataCore.clearScreenController();
         }
     }
 
@@ -339,37 +335,6 @@ public final class StrataPanel extends JPanel {
                 StrataPanel.this.secretInput = secret;
                 StrataPanel.this.enableInputMethods(!secret);
             }
-        }
-    }
-
-    /**
-     * The panel's platform: the given one, with the panel's own text input sink. AWT delivers typed characters
-     * without being told, so the given platform's sink has nothing to do.
-     */
-    private record PanelPlatform(SwingPlatform platform, TextInputSink textInput) implements Platform {
-        @Override
-        public TextMetrics textMetrics() {
-            return this.platform.textMetrics();
-        }
-
-        @Override
-        public Clipboard clipboard() {
-            return this.platform.clipboard();
-        }
-
-        @Override
-        public Clock clock() {
-            return this.platform.clock();
-        }
-
-        @Override
-        public Capabilities capabilities() {
-            return this.platform.capabilities();
-        }
-
-        @Override
-        public ThemeSource themes() {
-            return this.platform.themes();
         }
     }
 

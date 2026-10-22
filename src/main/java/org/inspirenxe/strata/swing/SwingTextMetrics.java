@@ -91,4 +91,17 @@ public final class SwingTextMetrics implements TextMetrics {
     public float lineHeight(final TextStyle style) {
         return this.font(style).lineHeight(style);
     }
+
+    /**
+     * Returns the ascent of the font the style is drawn with, where the canvas puts the baseline. A font whose ascent
+     * is more than its line height answers the line height, and one whose ascent is not positive answers four fifths
+     * of it.
+     */
+    @Override
+    public float ascent(final TextStyle style) {
+        final SwingFont font = this.font(style);
+        final float lineHeight = font.lineHeight(style);
+        final float ascent = font.ascent(style);
+        return ascent > 0f ? Math.min(ascent, lineHeight) : lineHeight * 0.8f;
+    }
 }

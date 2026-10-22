@@ -31,6 +31,7 @@ import org.inspirenxe.strata.api.theme.ThemeId;
 import org.inspirenxe.strata.api.theme.Themes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
@@ -51,8 +52,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Drives a {@link StrataPanel} with synthetic AWT events, calling its listeners directly so no display or focus
- * owner is needed. The panel runs at scale 2, so AWT pixel (20, 20) is UI point (10, 10).
+ * owner is needed. The panel runs at scale 2, so AWT pixel (20, 20) is UI point (10, 10). Every test runs on the
+ * event thread, the panel's UI thread.
  */
+@ExtendWith(OnEventThread.class)
 class StrataPanelTest {
     private StrataPanel panel;
 
