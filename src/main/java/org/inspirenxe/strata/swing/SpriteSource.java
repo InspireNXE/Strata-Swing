@@ -43,7 +43,23 @@ public interface SpriteSource {
     Optional<BufferedImage> load(SpriteId sprite);
 
     /**
-     * Returns a source that reads images from the class path, at the resource a resolver names.
+     * Loads a sprite's image drawn for a denser display, with {@code density} image pixels for each pixel of the
+     * plain image, so it shows the same sprite at the same size in UI units, only sharper. {@link SwingSprites} asks
+     * for density 2 where one UI unit covers at least 2 device pixels and for 1.5 where it covers at least 1.5,
+     * and uses the plain image from {@link #load} when the answer is empty. The default has no denser images.
+     *
+     * @param sprite the sprite
+     * @param density how many times denser than the plain image, 1.5 or 2
+     * @return the image, or empty if there is none for the density or it cannot be read
+     */
+    default Optional<BufferedImage> loadDense(final SpriteId sprite, final float density) {
+        return Optional.empty();
+    }
+
+    /**
+     * Returns a source that reads images from the class path, at the resource a resolver names. Denser images sit
+     * beside the plain one with {@code @2x} or {@code @1.5x} before the extension, such as
+     * {@code assets/<namespace>/sprites/<path>@2x.png}.
      *
      * @param loader the class loader to find images with
      * @param resolver where each sprite's image lives on the class path
@@ -52,13 +68,43 @@ public interface SpriteSource {
     static SpriteSource classPath(final ClassLoader loader, final SpriteResolver resolver) {
         Objects.requireNonNull(loader, "loader");
         Objects.requireNonNull(resolver, "resolver");
-        return sprite -> {
-            try (InputStream in = loader.getResourceAsStream(resolver.resourcePath(sprite))) {
-                return in == null ? Optional.empty() : Optional.ofNullable(ImageIO.read(in));
-            } catch (final IOException e) {
-                // A broken image is treated like a missing one, so the canvas draws its placeholder instead of failing
-                return Optional.empty();
+        return new SpriteSource() {
+            @Override
+            public Optional<BufferedImage> load(final SpriteId sprite) {
+                return SpriteSource.read(loader, resolver.resourcePath(sprite));
+            }
+
+            @Override
+            public Optional<BufferedImage> loadDense(final SpriteId sprite, final float density) {
+                return SpriteSource.read(loader, SpriteSource.densePath(resolver.resourcePath(sprite), density));
             }
         };
+    }
+
+    /**
+     * Returns the path of a denser image: {@code @2x} or {@code @1.5x} put before the file's extension, or after the
+     * name when it has none.
+     *
+     * @param path the plain image's path
+     * @param density how many times denser
+     * @return the denser image's path
+     */
+    static String densePath(final String path, final float density) {
+        final String suffix = "@" + (density == Math.rint(density) ? Integer.toString((int) density)
+                : Float.toString(density)) + "x";
+        final int dot = path.lastIndexOf('.');
+        if (dot <= path.lastIndexOf('/')) {
+            return path + suffix;
+        }
+        return path.substring(0, dot) + suffix + path.substring(dot);
+    }
+
+    private static Optional<BufferedImage> read(final ClassLoader loader, final String path) {
+        try (InputStream in = loader.getResourceAsStream(path)) {
+            return in == null ? Optional.empty() : Optional.ofNullable(ImageIO.read(in));
+        } catch (final IOException e) {
+            // A broken image is treated like a missing one, so the canvas draws its placeholder instead of failing
+            return Optional.empty();
+        }
     }
 }

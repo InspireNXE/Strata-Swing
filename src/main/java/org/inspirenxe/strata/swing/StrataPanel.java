@@ -37,6 +37,7 @@ import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.Frame;
 import java.awt.Graphics;
+import java.awt.GraphicsConfiguration;
 import java.awt.Graphics2D;
 import java.awt.Insets;
 import java.awt.RenderingHints;
@@ -77,8 +78,10 @@ import javax.swing.WindowConstants;
  *
  * <p>How Swing maps onto Strata:</p>
  * <ul>
- *     <li>One UI unit is {@code scale} pixels. Drawing is scaled up and pointer positions
- *     scaled down by the same factor.</li>
+ *     <li>One UI unit is {@code scale} pixels, a zoom that {@link #setScale} changes. Drawing is scaled up and
+ *     pointer positions scaled down by the same factor. Java2D applies the display's own scale on top, so the screens'
+ *     density, the device pixels per unit that components and sprites read, is the scale times the display's. It
+ *     follows the panel to another display.</li>
  *     <li>The panel repaints when its screens need a frame, and at the next timed change, such as a caret's blink,
  *     so an idle panel with a blinking caret paints twice a second and one with nothing timed does not paint.</li>
  *     <li>It takes keyboard focus when clicked, and turns off Swing's own Tab handling so Strata's tab order
@@ -129,7 +132,11 @@ public final class StrataPanel extends JPanel {
     /**
      * Pixels per UI unit.
      */
-    private final float scale;
+    private float scale;
+    /**
+     * The device pixels per unit last given to the screens.
+     */
+    private float pixelsPerUnit;
     /**
      * The high half of a surrogate pair that AWT typed, waiting for its low half; 0 when nothing is waiting.
      */
@@ -188,6 +195,7 @@ public final class StrataPanel extends JPanel {
         this.frameTimer = new Timer(0, event -> this.repaint());
         this.frameTimer.setRepeats(false);
         this.scale = scale;
+        this.updatePixelsPerUnit();
 
         this.windowCloser = new WindowAdapter() {
             @Override
@@ -214,6 +222,8 @@ public final class StrataPanel extends JPanel {
         });
         // Any thread may ask, such as one that sets a state; repaint() is safe from all of them
         this.screens.setFrameRequester(this::repaint);
+        // The panel moved to a display with another scale
+        this.addPropertyChangeListener("graphicsConfiguration", event -> this.updatePixelsPerUnit());
     }
 
     /**
@@ -272,12 +282,59 @@ public final class StrataPanel extends JPanel {
     }
 
     /**
-     * Returns the number of pixels per UI unit.
+     * Returns the number of pixels per UI unit, before the display's own scale.
      *
-     * @return the scale given to the constructor
+     * @return the scale given to the constructor or {@link #setScale}
      */
     public float scale() {
         return this.scale;
+    }
+
+    /**
+     * Changes the number of pixels per UI unit, such as when the user zooms. The screens get the panel's size in the
+     * new units and the new density, lay out again and repaint. The panel revalidates, since its preferred size
+     * changes with the scale.
+     *
+     * @param scale pixels per UI unit, positive
+     * @throws IllegalArgumentException if {@code scale} is not positive and finite
+     */
+    public void setScale(final float scale) {
+        if (!(scale > 0f) || Float.isInfinite(scale)) {
+            throw new IllegalArgumentException("Scale must be positive: " + scale);
+        }
+        this.scale = scale;
+        this.resizeScreens();
+        this.updatePixelsPerUnit();
+        this.revalidate();
+        this.repaint();
+    }
+
+    /**
+     * Returns how many device pixels one UI unit covers: the scale times the display's scale, which Java2D applies to
+     * everything the panel draws. It is the screens' density, which components and painters read and sprites choose
+     * their image by. While the panel is not on a display, the display's scale counts as 1.
+     *
+     * @return device pixels per UI unit
+     */
+    public float pixelsPerUnit() {
+        final GraphicsConfiguration configuration = this.getGraphicsConfiguration();
+        final double display = configuration == null ? 1d : configuration.getDefaultTransform().getScaleX();
+        return (float) (this.scale * (display > 0d ? display : 1d));
+    }
+
+    /**
+     * Gives the screens the density when it changed.
+     */
+    private void updatePixelsPerUnit() {
+        // Swing may ask before the constructor has finished
+        if (this.screens == null) {
+            return;
+        }
+        final float density = this.pixelsPerUnit();
+        if (density != this.pixelsPerUnit) {
+            this.pixelsPerUnit = density;
+            this.screens.setPixelsPerUnit(density);
+        }
     }
 
     /**
@@ -407,6 +464,7 @@ public final class StrataPanel extends JPanel {
     public void addNotify() {
         super.addNotify();
         this.resizeScreens();
+        this.updatePixelsPerUnit();
         this.repaint();
     }
 
@@ -438,6 +496,7 @@ public final class StrataPanel extends JPanel {
     @Override
     protected void paintComponent(final Graphics graphics) {
         super.paintComponent(graphics);
+        this.updatePixelsPerUnit();
         final Graphics2D g = (Graphics2D) graphics.create();
         try {
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);

@@ -43,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SwingCanvasTest {
     private static final SpriteId WHITE = SpriteId.of("test", "white");
     private static final SpriteId FRAME = SpriteId.of("test", "frame");
+    private static final SpriteId DOT = SpriteId.of("test", "dot");
     private static final int CORNER = 0xFFFF0000;
     private static final int EDGE = 0xFF00FF00;
     private static final int CENTER = 0xFF0000FF;
@@ -69,6 +70,24 @@ class SwingCanvasTest {
         frame.setRGB(2, 2, CORNER);
         frame.setRGB(1, 1, CENTER);
         ImageIO.write(frame, "png", dir.resolve("frame.png").toFile());
+
+        // A red dot, and a blue one drawn for displays of twice the density
+        final BufferedImage dot = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+        fillImage(dot, 0, 0, 1, 1, CORNER);
+        ImageIO.write(dot, "png", dir.resolve("dot.png").toFile());
+        final BufferedImage denseDot = new BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB);
+        fillImage(denseDot, 0, 0, 2, 2, CENTER);
+        ImageIO.write(denseDot, "png", dir.resolve("dot@2x.png").toFile());
+
+        // A frame drawn at twice the density: two pixels of red corner, green edge and blue center each
+        final BufferedImage denseFrame = new BufferedImage(6, 6, BufferedImage.TYPE_INT_ARGB);
+        fillImage(denseFrame, 0, 0, 6, 6, EDGE);
+        fillImage(denseFrame, 0, 0, 2, 2, CORNER);
+        fillImage(denseFrame, 4, 0, 2, 2, CORNER);
+        fillImage(denseFrame, 0, 4, 2, 2, CORNER);
+        fillImage(denseFrame, 4, 4, 2, 2, CORNER);
+        fillImage(denseFrame, 2, 2, 2, 2, CENTER);
+        ImageIO.write(denseFrame, "png", dir.resolve("frame@2x.png").toFile());
 
         sprites = new SwingSprites(new URLClassLoader(new URL[] {assets.toUri().toURL()}, null));
     }
@@ -165,6 +184,46 @@ class SwingCanvasTest {
 
         assertEquals(0xFF000000, surface.argb(1, 1), "the new pixels, tinted");
         assertEquals(0xFFFF0000, surface.argb(3, 1), "the old pixels, tinted, where nothing drew over them");
+    }
+
+    @Test
+    void aDenserDisplayDrawsTheDenserImageAtTheSameSize() {
+        final SwingContractTests.ImageSurface plain = surface(8, 8);
+        plain.canvas().sprite(DOT, new Rect(0, 0, 4, 4), 0xFFFFFFFF);
+        plain.finish();
+        assertEquals(CORNER, plain.argb(1, 1), "one pixel per unit draws the plain image");
+        assertEquals(0, plain.argb(5, 5));
+
+        final SwingContractTests.ImageSurface dense = surface(8, 8);
+        dense.canvas().pushScale(2f);
+        dense.canvas().sprite(DOT, new Rect(0, 0, 2, 2), 0xFFFFFFFF);
+        dense.canvas().popTransform();
+        dense.finish();
+        assertEquals(CENTER, dense.argb(1, 1), "two pixels per unit draw the @2x image");
+        assertEquals(CENTER, dense.argb(3, 3), "at the same size in units");
+        assertEquals(0, dense.argb(5, 5));
+    }
+
+    @Test
+    void aDenseNineSliceKeepsItsBorderInUnits() {
+        final SwingContractTests.ImageSurface surface = surface(20, 20);
+        surface.canvas().pushScale(2f);
+        surface.canvas().nineSlice(FRAME, new Rect(0, 0, 10, 10), Insets.of(1), 0xFFFFFFFF);
+        surface.canvas().popTransform();
+        surface.finish();
+
+        assertEquals(CORNER, surface.argb(1, 1), "the corner is one unit, two device pixels");
+        assertEquals(EDGE, surface.argb(10, 1), "the top edge");
+        assertEquals(CENTER, surface.argb(10, 10), "the center");
+        assertEquals(EDGE, surface.argb(1, 10), "the left edge is one unit wide");
+        assertEquals(CENTER, surface.argb(2, 10), "the center starts after one unit");
+    }
+
+    @Test
+    void denserImagesSitBesideThePlainOne() {
+        assertEquals("assets/a/sprites/b@2x.png", SpriteSource.densePath("assets/a/sprites/b.png", 2f));
+        assertEquals("assets/a/sprites/b@1.5x.png", SpriteSource.densePath("assets/a/sprites/b.png", 1.5f));
+        assertEquals("assets/a.b/sprites/c@2x", SpriteSource.densePath("assets/a.b/sprites/c", 2f));
     }
 
     @Test

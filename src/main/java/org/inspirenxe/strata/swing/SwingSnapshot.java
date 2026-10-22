@@ -48,7 +48,7 @@ public final class SwingSnapshot {
      * @param theme the theme to render it with
      * @param width the image width in pixels
      * @param height the image height in pixels
-     * @param scale pixels per UI unit; the screen gets {@code width / scale} by
+     * @param scale pixels per UI unit, which is also the screen's density; the screen gets {@code width / scale} by
      *     {@code height / scale} units
      * @return a new ARGB image of the frame
      * @throws org.inspirenxe.strata.api.theme.ThemeException if the theme lacks a style key the screen's tree
@@ -164,6 +164,7 @@ public final class SwingSnapshot {
         // One frame is drawn, so a tooltip the input reaches shows without waiting
         screens.setTooltipDelay(0L);
         screens.resize(width / scale, height / scale);
+        screens.setPixelsPerUnit(scale);
         screens.push(screen);
         input.accept(screens);
 

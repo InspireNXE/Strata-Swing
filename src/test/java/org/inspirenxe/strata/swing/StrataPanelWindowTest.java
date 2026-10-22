@@ -17,6 +17,8 @@ package org.inspirenxe.strata.swing;
 
 import org.inspirenxe.strata.api.ComponentFactory;
 import org.inspirenxe.strata.api.component.Component;
+import org.inspirenxe.strata.api.extension.CustomComponent;
+import org.inspirenxe.strata.api.extension.MeasureContext;
 import org.inspirenxe.strata.api.geometry.Size;
 import org.inspirenxe.strata.api.screen.Screen;
 import org.inspirenxe.strata.api.screen.ScreenHandle;
@@ -67,6 +69,59 @@ class StrataPanelWindowTest {
         this.panel.setPreferredSize(new Dimension(300, 200));
 
         assertEquals(new Dimension(300, 200), this.panel.getPreferredSize());
+    }
+
+    @Test
+    void theScaleIsTheScreensDensity() {
+        final Density density = new Density();
+        this.panel.setBounds(0, 0, 400, 200);
+        this.panel.screens().push(factory -> factory.absolutePanel().add(new Probe(factory, density)));
+        this.render();
+        assertEquals(2f, density.seen, "headless, the display's scale is 1");
+        assertEquals(2f, this.panel.pixelsPerUnit());
+
+        this.panel.setScale(4f);
+        this.render();
+        assertEquals(4f, density.seen);
+        final Size preferred = this.panel.screens().preferredSize(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY);
+        assertEquals((int) Math.ceil(preferred.width() * 4f), this.panel.getPreferredSize().width);
+    }
+
+    @Test
+    void aScaleMustBePositive() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> this.panel.setScale(0f));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> this.panel.setScale(Float.NaN));
+    }
+
+    /**
+     * What a probe saw.
+     */
+    private static final class Density {
+        private float seen;
+    }
+
+    private void render() {
+        this.panel.screens().render(new SwingContractTests.ImageSurface(10, 10,
+                new SwingSprites(StrataPanelWindowTest.class.getClassLoader())).canvas());
+    }
+
+    /**
+     * Records the density it is measured at, as a developer's component would read it.
+     */
+    private static final class Probe extends CustomComponent<Probe> {
+        private final Density density;
+
+        Probe(final ComponentFactory factory, final Density density) {
+            super(factory);
+            this.density = density;
+        }
+
+        @Override
+        protected Size measure(final MeasureContext context, final float availableWidth, final float availableHeight) {
+            this.density.seen = this.environment().pixelsPerUnit();
+            return new Size(10f, 10f);
+        }
     }
 
     @Test

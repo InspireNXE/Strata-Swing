@@ -27,10 +27,16 @@ import java.util.Optional;
  * Loads sprites for the Swing canvas from a {@link SpriteSource}: by default the class path, at the resource a
  * {@link SpriteResolver} names ({@link SpriteResolver#DEFAULT} unless one is given). Images are loaded once and
  * cached, including the fact that one is missing, until {@link #clear()}.
+ *
+ * <p>Where one UI unit covers 2 device pixels or more the canvas draws the source's image of density 2 if it has one,
+ * from 1.5 its image of density 1.5, and otherwise the plain image, each at the same size in UI units.</p>
  */
 public final class SwingSprites {
+    private static final float[] DENSITIES = {2f, 1.5f};
+
     private final SpriteSource source;
     private final Map<SpriteId, Optional<BufferedImage>> cache;
+    private final Map<DenseKey, Optional<BufferedImage>> dense;
     private long version;
 
     /**
@@ -60,6 +66,7 @@ public final class SwingSprites {
     public SwingSprites(final SpriteSource source) {
         this.source = Objects.requireNonNull(source, "source");
         this.cache = new HashMap<>();
+        this.dense = new HashMap<>();
     }
 
     /**
@@ -73,11 +80,41 @@ public final class SwingSprites {
     }
 
     /**
+     * Returns the densest image of a sprite that a density can show: the one of density 2 from 2 device pixels per
+     * unit, of 1.5 from 1.5, and the plain image otherwise or when the denser one is missing.
+     *
+     * @param sprite the sprite
+     * @param pixelsPerUnit device pixels per UI unit where it is drawn
+     * @return the image, or empty if the source has none at all
+     */
+    public Optional<BufferedImage> get(final SpriteId sprite, final float pixelsPerUnit) {
+        return this.image(sprite, pixelsPerUnit).map(SpriteImage::image);
+    }
+
+    /**
+     * Returns the image {@link #get(SpriteId, float)} picks, with its density.
+     */
+    Optional<SpriteImage> image(final SpriteId sprite, final float pixelsPerUnit) {
+        for (final float density : DENSITIES) {
+            // A little below, so a scale of 1.5 stored as 1.4999 still counts
+            if (pixelsPerUnit >= density - 0.01f) {
+                final Optional<BufferedImage> image = this.dense.computeIfAbsent(new DenseKey(sprite, density),
+                        key -> this.source.loadDense(key.sprite(), key.density()));
+                if (image.isPresent()) {
+                    return Optional.of(new SpriteImage(image.get(), density));
+                }
+            }
+        }
+        return this.get(sprite).map(image -> new SpriteImage(image, 1f));
+    }
+
+    /**
      * Forgets every loaded image, so each is loaded from the source again when next drawn. Canvases drop their
      * tinted copies too.
      */
     public void clear() {
         this.cache.clear();
+        this.dense.clear();
         this.version++;
     }
 
@@ -88,5 +125,17 @@ public final class SwingSprites {
      */
     public long version() {
         return this.version;
+    }
+
+    /**
+     * An image and how many of its pixels cover one pixel of the plain image.
+     *
+     * @param image the image
+     * @param density 1 for the plain image
+     */
+    record SpriteImage(BufferedImage image, float density) {
+    }
+
+    private record DenseKey(SpriteId sprite, float density) {
     }
 }

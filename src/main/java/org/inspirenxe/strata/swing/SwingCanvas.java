@@ -68,8 +68,10 @@ import java.util.WeakHashMap;
  *     device pixel, so pieces that share an edge meet without gaps or overlaps at any scale.</li>
  *     <li>A sprite tint other than opaque white multiplies each pixel's channels; tinted copies are cached per
  *     sprite and tint.</li>
- *     <li>A nine-slice shrinks its borders to fit a rectangle smaller than them. Its border is in the image's
- *     pixels, each drawn one UI unit wide; sized and tiled nine-slices are drawn by core from
+ *     <li>Sprites draw the densest image {@link SwingSprites} has for the device pixels under them, read from the
+ *     current transform, so pushed scales count too.</li>
+ *     <li>A nine-slice shrinks its borders to fit a rectangle smaller than them. Its border is in the plain image's
+ *     pixels, each drawn one UI unit wide, and in proportion in a denser image; sized and tiled nine-slices are drawn by core from
  *     {@link #spriteRegion} calls, since Swing stores no slicing with its images.</li>
  *     <li>Text is drawn with the {@link SwingFont} its style's metrics measured it with, the shadow one unit down
  *     and to the right in a quarter-brightness copy of the color.</li>
@@ -217,12 +219,12 @@ public final class SwingCanvas implements Canvas {
 
     @Override
     public void sprite(final SpriteId sprite, final Rect rect, final int tint) {
-        final Optional<BufferedImage> image = this.image(sprite, tint);
+        final Optional<SwingSprites.SpriteImage> image = this.image(sprite, tint);
         if (image.isEmpty()) {
             this.fill(rect, MISSING_SPRITE_COLOR);
             return;
         }
-        final BufferedImage img = image.get();
+        final BufferedImage img = image.get().image();
         this.drawImage(img, rect.x(), rect.y(), rect.right(), rect.bottom(), 0, 0, img.getWidth(), img.getHeight());
     }
 
@@ -233,12 +235,12 @@ public final class SwingCanvas implements Canvas {
     @Override
     public void spriteRegion(final SpriteId sprite, final Rect rect, final float u0, final float v0,
                              final float u1, final float v1, final int tint) {
-        final Optional<BufferedImage> image = this.image(sprite, tint);
+        final Optional<SwingSprites.SpriteImage> image = this.image(sprite, tint);
         if (image.isEmpty()) {
             this.fill(rect, MISSING_SPRITE_COLOR);
             return;
         }
-        final BufferedImage img = image.get();
+        final BufferedImage img = image.get().image();
         final int w = img.getWidth();
         final int h = img.getHeight();
         final int sx0 = Math.clamp(Math.round(u0 * w), 0, w - 1);
@@ -250,25 +252,31 @@ public final class SwingCanvas implements Canvas {
 
     @Override
     public void nineSlice(final SpriteId sprite, final Rect rect, final Insets border, final int tint) {
-        final Optional<BufferedImage> image = this.image(sprite, tint);
+        final Optional<SwingSprites.SpriteImage> image = this.image(sprite, tint);
         if (image.isEmpty()) {
             this.fill(rect, MISSING_SPRITE_COLOR);
             return;
         }
-        final BufferedImage img = image.get();
+        final BufferedImage img = image.get().image();
+        // The border counts the plain image's pixels; a denser image has more of them under each unit
+        final float density = image.get().density();
         final int w = img.getWidth();
         final int h = img.getHeight();
-        final int l = clampBorder(border.left(), w);
-        final int r = clampBorder(border.right(), w - l);
-        final int t = clampBorder(border.top(), h);
-        final int b = clampBorder(border.bottom(), h - t);
+        final int l = clampBorder(border.left() * density, w);
+        final int r = clampBorder(border.right() * density, w - l);
+        final int t = clampBorder(border.top() * density, h);
+        final int b = clampBorder(border.bottom() * density, h - t);
+        final float left = l / density;
+        final float right = r / density;
+        final float top = t / density;
+        final float bottom = b / density;
 
         // Borders wider than the rectangle shrink in proportion, so nothing draws outside it
-        final float horizontal = l + r > rect.width() ? rect.width() / (l + r) : 1f;
-        final float vertical = t + b > rect.height() ? rect.height() / (t + b) : 1f;
+        final float horizontal = left + right > rect.width() ? rect.width() / (left + right) : 1f;
+        final float vertical = top + bottom > rect.height() ? rect.height() / (top + bottom) : 1f;
 
-        final float[] dx = {rect.x(), rect.x() + l * horizontal, rect.right() - r * horizontal, rect.right()};
-        final float[] dy = {rect.y(), rect.y() + t * vertical, rect.bottom() - b * vertical, rect.bottom()};
+        final float[] dx = {rect.x(), rect.x() + left * horizontal, rect.right() - right * horizontal, rect.right()};
+        final float[] dy = {rect.y(), rect.y() + top * vertical, rect.bottom() - bottom * vertical, rect.bottom()};
         final int[] sx = {0, l, w - r, w};
         final int[] sy = {0, t, h - b, h};
 
@@ -832,16 +840,25 @@ public final class SwingCanvas implements Canvas {
         }
     }
 
-    private Optional<BufferedImage> image(final SpriteId sprite, final int tint) {
+    private Optional<SwingSprites.SpriteImage> image(final SpriteId sprite, final int tint) {
         if (this.sprites.version() != this.spritesVersion) {
             this.spritesVersion = this.sprites.version();
             this.tinted.clear();
         }
-        final Optional<BufferedImage> image = this.sprites.get(sprite);
+        final Optional<SwingSprites.SpriteImage> image = this.sprites.image(sprite, this.devicePixelsPerUnit());
         if (image.isEmpty() || tint == 0xFFFFFFFF) {
             return image;
         }
-        return Optional.of(this.tinted.computeIfAbsent(new TintKey(sprite, tint), key -> tint(image.get(), tint)));
+        final SwingSprites.SpriteImage plain = image.get();
+        return Optional.of(new SwingSprites.SpriteImage(this.tinted.computeIfAbsent(
+                new TintKey(sprite, tint, plain.density()), key -> tint(plain.image(), tint)), plain.density()));
+    }
+
+    /**
+     * Returns how many device pixels one unit covers under the current transform.
+     */
+    private float devicePixelsPerUnit() {
+        return (float) Math.sqrt(Math.abs(this.graphics.getTransform().getDeterminant()));
     }
 
     /**
@@ -886,7 +903,7 @@ public final class SwingCanvas implements Canvas {
         return (argb & 0xFF000000) | rgb;
     }
 
-    private record TintKey(SpriteId sprite, int tint) {
+    private record TintKey(SpriteId sprite, int tint, float density) {
     }
 
     /**
