@@ -24,7 +24,8 @@
  *
  * <p>Sprites load through {@link org.inspirenxe.strata.swing.SwingSprites}: from the class path, at
  * {@code assets/<namespace>/sprites/<path>.png} unless a {@link org.inspirenxe.strata.swing.SpriteResolver} names
- * another place, or from anywhere a {@link org.inspirenxe.strata.swing.SpriteSource} reads.
+ * another place, or from anywhere a {@link org.inspirenxe.strata.swing.SpriteSource} reads. Images drawn for denser
+ * displays sit beside them as {@code <path>@2x.png} and {@code <path>@1.5x.png}.
  * {@link org.inspirenxe.strata.swing.SwingThemeSource} finds theme files at
  * {@code assets/<namespace>/themes/<path>.json} unless a {@link org.inspirenxe.strata.swing.ThemePathResolver}
  * names another place. Fonts are {@link org.inspirenxe.strata.swing.SwingFont}s held by

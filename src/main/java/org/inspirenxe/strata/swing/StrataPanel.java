@@ -79,8 +79,12 @@ import javax.swing.WindowConstants;
  * <pre>{@code
  * StrataPanel panel = new StrataPanel(new SwingPlatform(SwingTextMetrics.defaults()), Themes.flat(), 2f);
  * panel.setDefault();
+ * JFrame frame = new JFrame("Settings");
  * frame.setContentPane(panel);
+ * panel.manageWindow(frame);
  * Strata.screens().open(new SettingsScreen());
+ * frame.pack();
+ * frame.setVisible(true);
  * }</pre>
  *
  * <p>{@code screens().push(screen)} shows a screen in the theme given to the constructor, or the one set later on
