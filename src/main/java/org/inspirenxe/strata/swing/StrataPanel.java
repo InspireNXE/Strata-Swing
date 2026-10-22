@@ -24,6 +24,7 @@ import org.inspirenxe.strata.api.input.TextInputKind;
 import org.inspirenxe.strata.api.screen.ScreenController;
 import org.inspirenxe.strata.api.theme.Theme;
 import org.inspirenxe.strata.core.StrataCore;
+import org.inspirenxe.strata.spi.Clock;
 import org.inspirenxe.strata.spi.HeldKeys;
 import org.inspirenxe.strata.spi.ScreenStack;
 import org.inspirenxe.strata.spi.TextInputSink;
@@ -65,7 +66,8 @@ import javax.swing.Timer;
  * <ul>
  *     <li>One UI unit is {@code scale} pixels. Drawing is scaled up and pointer positions
  *     scaled down by the same factor.</li>
- *     <li>The panel repaints about 60 times a second while it is shown.</li>
+ *     <li>The panel repaints when its screens need a frame, and at the next timed change, such as a caret's blink,
+ *     so an idle panel with a blinking caret paints twice a second and one with nothing timed does not paint.</li>
  *     <li>It takes keyboard focus when clicked, and turns off Swing's own Tab handling so Strata's tab order
  *     applies.</li>
  *     <li>AWT reports held keys as repeated presses; the panel turns them into repeats. Keys held when the panel
@@ -96,7 +98,11 @@ public final class StrataPanel extends JPanel {
     private final transient SwingTextMetrics textMetrics;
     private transient SwingCanvas canvas;
     private final transient HeldKeys heldKeys;
-    private final transient Timer repaintTimer;
+    private final transient Clock clock;
+    /**
+     * Repaints once at the screens' next timed change.
+     */
+    private final transient Timer frameTimer;
     /**
      * Pixels per UI unit.
      */
@@ -142,7 +148,9 @@ public final class StrataPanel extends JPanel {
         this.textMetrics = platform.textMetrics();
         this.canvas = new SwingCanvas(this.textMetrics, sprites);
         this.heldKeys = new HeldKeys();
-        this.repaintTimer = new Timer(16, event -> this.repaint());
+        this.clock = platform.clock();
+        this.frameTimer = new Timer(0, event -> this.repaint());
+        this.frameTimer.setRepeats(false);
         this.scale = scale;
 
         this.setBackground(new Color(0xFF1E1F22, true));
@@ -162,6 +170,8 @@ public final class StrataPanel extends JPanel {
                 StrataPanel.this.heldKeys.clear();
             }
         });
+        // Any thread may ask, such as one that sets a state; repaint() is safe from all of them
+        this.screens.setFrameRequester(this::repaint);
     }
 
     /**
@@ -238,21 +248,39 @@ public final class StrataPanel extends JPanel {
     }
 
     /**
-     * Starts repainting when the panel is shown.
+     * Returns whether a repaint waits for the screens' next timed change. For tests.
+     *
+     * @return true while the frame timer runs
+     */
+    boolean isFrameTimerRunning() {
+        return this.frameTimer.isRunning();
+    }
+
+    /**
+     * Returns how long the frame timer waits, in milliseconds. For tests.
+     *
+     * @return the delay set after the last paint
+     */
+    int frameTimerDelay() {
+        return this.frameTimer.getInitialDelay();
+    }
+
+    /**
+     * Sizes the screens and paints the first frame when the panel is shown.
      */
     @Override
     public void addNotify() {
         super.addNotify();
         this.resizeScreens();
-        this.repaintTimer.start();
+        this.repaint();
     }
 
     /**
-     * Stops repainting when the panel is removed from its window.
+     * Stops waiting for timed changes when the panel is removed from its window.
      */
     @Override
     public void removeNotify() {
-        this.repaintTimer.stop();
+        this.frameTimer.stop();
         super.removeNotify();
     }
 
@@ -286,6 +314,23 @@ public final class StrataPanel extends JPanel {
             g.dispose();
         }
         this.setCursor(cursorFor(this.canvas.requestedCursor()));
+        this.scheduleNextFrame();
+    }
+
+    /**
+     * Starts the frame timer for the screens' next timed change, or stops it when nothing timed waits.
+     */
+    private void scheduleNextFrame() {
+        final long next = this.screens.nextFrameNanos();
+        if (next == Long.MAX_VALUE) {
+            this.frameTimer.stop();
+            return;
+        }
+        final long nanos = Math.max(0L, next - this.clock.nanoTime());
+        // Rounded up, so the frame never comes before the change is due
+        final long millis = Math.min(Integer.MAX_VALUE, (nanos + 999_999L) / 1_000_000L);
+        this.frameTimer.setInitialDelay((int) millis);
+        this.frameTimer.restart();
     }
 
     /**

@@ -32,6 +32,7 @@ import org.inspirenxe.strata.api.theme.Themes;
 import org.inspirenxe.strata.core.paint.CanvasPainter;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.awt.Graphics2D;
@@ -179,6 +180,7 @@ class SwingAssetsTest {
     }
 
     @Nested
+    @ExtendWith(OnEventThread.class)
     class Hosts {
         @Test
         void aPanelDrawsNewSpritesAfterSetSprites() {
