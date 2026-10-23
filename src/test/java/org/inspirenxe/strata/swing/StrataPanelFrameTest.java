@@ -34,7 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The panel paints on demand: when its screens need a frame, and at their next timed change.
+ * The panel paints on demand: when its screens need a frame, and at their next timed change, at most at their frame
+ * rate.
  */
 class StrataPanelFrameTest {
     private StrataPanel panel;
@@ -80,8 +81,48 @@ class StrataPanelFrameTest {
         final Thread worker = new Thread(() -> enabled.set(false));
         worker.start();
         worker.join();
+        SwingUtilities.invokeAndWait(() -> {
+            assertTrue(this.repaints.count.get() > before || this.panel.isFrameTimerRunning(),
+                    "the requester repainted the panel, or waits for the frame rate's interval");
+            if (this.panel.isFrameTimerRunning()) {
+                final int delay = this.panel.frameTimerDelay();
+                assertTrue(delay > 0 && delay <= 34, "at most one interval at 30 frames a second: " + delay);
+            }
+        });
+    }
 
-        assertTrue(this.repaints.count.get() > before, "the requester repainted the panel");
+    @Test
+    void aFrameNeededLongAfterTheLastPaintRepaintsAtOnce() throws Exception {
+        final State<Boolean> enabled = State.of(true);
+        SwingUtilities.invokeAndWait(() -> {
+            this.panel.screens().push(factory -> factory.absolutePanel()
+                    .add(factory.button("Save").bind(Component.ENABLED, enabled)));
+            this.paint();
+        });
+        Thread.sleep(50L);
+        final int before = this.repaints.count.get();
+        enabled.set(false);
+        SwingUtilities.invokeAndWait(() -> {
+            assertTrue(this.repaints.count.get() > before, "more than an interval has passed");
+            assertFalse(this.panel.isFrameTimerRunning());
+        });
+    }
+
+    @Test
+    void aHigherRateWaitsLess() throws Exception {
+        final State<Boolean> enabled = State.of(true);
+        SwingUtilities.invokeAndWait(() -> {
+            this.panel.screens().setFrameRate(200);
+            this.panel.screens().push(factory -> factory.absolutePanel()
+                    .add(factory.button("Save").bind(Component.ENABLED, enabled)));
+            this.paint();
+            enabled.set(false);
+        });
+        SwingUtilities.invokeAndWait(() -> {
+            if (this.panel.isFrameTimerRunning()) {
+                assertTrue(this.panel.frameTimerDelay() <= 5, "one interval at 200 a second");
+            }
+        });
     }
 
     @Test

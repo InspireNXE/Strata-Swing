@@ -69,6 +69,7 @@ import java.util.Optional;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.WindowConstants;
 
@@ -100,7 +101,10 @@ import javax.swing.WindowConstants;
  *     density, the device pixels per unit that components and sprites read, is the scale times the display's. It
  *     follows the panel to another display.</li>
  *     <li>The panel repaints when its screens need a frame, and at the next timed change, such as a caret's blink,
- *     so an idle panel with a blinking caret paints twice a second and one with nothing timed does not paint.</li>
+ *     so an idle panel with a blinking caret paints twice a second and one with nothing timed does not paint. Either
+ *     way it waits until one interval of the screens' frame rate has passed since the last paint began, so it paints
+ *     at most {@code screens().frameRate()} times a second, 30 unless set. Swing's own repaints, such as when the
+ *     panel is resized or uncovered, are not held to the rate.</li>
  *     <li>It takes keyboard focus when clicked, and turns off Swing's own Tab handling so Strata's tab order
  *     applies.</li>
  *     <li>AWT reports held keys as repeated presses; the panel turns them into repeats. Keys held when the panel
@@ -148,9 +152,18 @@ public final class StrataPanel extends JPanel {
     private final transient HeldKeys heldKeys;
     private final transient Clock clock;
     /**
-     * Repaints once at the screens' next timed change.
+     * Repaints once at the screens' next timed change, or when a needed frame's interval has passed.
      */
     private final transient Timer frameTimer;
+    /**
+     * The clock's reading when the frame timer fires, while it runs.
+     */
+    private transient long frameTimerDue;
+    /**
+     * The clock's reading when the last paint began, once there was one.
+     */
+    private transient long lastPaint;
+    private transient boolean painted;
     /**
      * Pixels per UI unit.
      */
@@ -242,8 +255,8 @@ public final class StrataPanel extends JPanel {
                 StrataPanel.this.heldKeys.clear();
             }
         });
-        // Any thread may ask, such as one that sets a state; repaint() is safe from all of them
-        this.screens.setFrameRequester(this::repaint);
+        // Any thread may ask, such as one that sets a state; the frame is scheduled on the event thread
+        this.screens.setFrameRequester(() -> SwingUtilities.invokeLater(this::frameNeeded));
         // The panel moved to a display with another scale
         this.addPropertyChangeListener("graphicsConfiguration", event -> this.updatePixelsPerUnit());
         if (!GraphicsEnvironment.isHeadless()) {
@@ -588,6 +601,10 @@ public final class StrataPanel extends JPanel {
     @Override
     protected void paintComponent(final Graphics graphics) {
         super.paintComponent(graphics);
+        this.lastPaint = this.clock.nanoTime();
+        this.painted = true;
+        // This paint serves whatever the timer waited for
+        this.frameTimer.stop();
         this.updatePixelsPerUnit();
         final Graphics2D g = (Graphics2D) graphics.create();
         try {
@@ -618,11 +635,35 @@ public final class StrataPanel extends JPanel {
             this.frameTimer.stop();
             return;
         }
-        final long nanos = Math.max(0L, next - this.clock.nanoTime());
-        // Rounded up, so the frame never comes before the change is due
+        this.scheduleFrame(next);
+    }
+
+    /**
+     * Paints the frame the screens need once one interval of their frame rate has passed since the last paint began.
+     */
+    private void frameNeeded() {
+        this.scheduleFrame(this.painted ? this.lastPaint + this.screens.frameIntervalNanos() : Long.MIN_VALUE);
+    }
+
+    /**
+     * Repaints at a time on the clock: at once if it has come, otherwise with the frame timer, unless the timer
+     * already fires sooner.
+     */
+    private void scheduleFrame(final long due) {
+        final long nanos = due - this.clock.nanoTime();
+        if (nanos <= 0L) {
+            this.frameTimer.stop();
+            this.repaint();
+            return;
+        }
+        if (this.frameTimer.isRunning() && this.frameTimerDue <= due) {
+            return;
+        }
+        // Rounded up, so the frame never comes before it is due
         final long millis = Math.min(Integer.MAX_VALUE, (nanos + 999_999L) / 1_000_000L);
         this.frameTimer.setInitialDelay((int) millis);
         this.frameTimer.restart();
+        this.frameTimerDue = due;
     }
 
     /**
