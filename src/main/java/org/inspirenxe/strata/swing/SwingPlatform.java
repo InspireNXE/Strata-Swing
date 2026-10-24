@@ -24,6 +24,7 @@ import org.inspirenxe.strata.spi.Clock;
 import org.inspirenxe.strata.spi.Conventions;
 import org.inspirenxe.strata.spi.FileDialogSource;
 import org.inspirenxe.strata.spi.Platform;
+import org.inspirenxe.strata.spi.Scheduler;
 import org.inspirenxe.strata.spi.TextInputSink;
 import org.inspirenxe.strata.spi.ThemeSource;
 
@@ -51,6 +52,8 @@ import javax.swing.SwingUtilities;
  *     with styled text going out as its plain text. In a headless JVM there is none, and the clipboard is
  *     {@link Clipboard#NONE}.</li>
  *     <li>The clock is {@link Clock#SYSTEM}.</li>
+ *     <li>Repeating tasks run on the event thread, each from a {@link javax.swing.Timer} that coalesces the runs it
+ *     falls behind on into one.</li>
  *     <li>AWT delivers typed characters without being told, so text input needs no signal. A {@link StrataPanel}
  *     replaces this platform's sink with its own, which turns input methods off while a secret field has focus.</li>
  *     <li>AWT reports held keys as repeated presses, which {@link StrataPanel} turns into repeats, so
@@ -85,6 +88,7 @@ public final class SwingPlatform implements Platform {
     private final ThemeSource themes;
     private final Conventions conventions;
     private final Optional<FileDialogSource> fileDialogs;
+    private final Scheduler scheduler = new SwingScheduler();
 
     /**
      * Creates the platform with a {@link SwingThemeSource} on this class's class loader.
@@ -140,6 +144,11 @@ public final class SwingPlatform implements Platform {
     @Override
     public SwingTextMetrics textMetrics() {
         return this.textMetrics;
+    }
+
+    @Override
+    public Scheduler scheduler() {
+        return this.scheduler;
     }
 
     @Override

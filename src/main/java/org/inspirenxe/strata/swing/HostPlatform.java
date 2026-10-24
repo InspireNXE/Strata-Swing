@@ -23,6 +23,7 @@ import org.inspirenxe.strata.spi.Clock;
 import org.inspirenxe.strata.spi.Conventions;
 import org.inspirenxe.strata.spi.FileDialogSource;
 import org.inspirenxe.strata.spi.Platform;
+import org.inspirenxe.strata.spi.Scheduler;
 import org.inspirenxe.strata.spi.TextInputSink;
 import org.inspirenxe.strata.spi.ThemeSource;
 
@@ -34,7 +35,8 @@ import java.util.function.BooleanSupplier;
 /**
  * The platform one panel's or one snapshot's screen stack runs with: a {@link SwingPlatform} with a text input sink
  * of its own, and either the event thread as its UI thread or none, so that core takes the first thread that drives
- * the stack. Every other member comes from the Swing platform. Each one is equal only to itself, so core keeps a UI
+ * the stack. A panel's repeating tasks run from the Swing platform's timers on the event thread; a snapshot draws one
+ * frame on a thread of its own, so its tasks never run. Every other member comes from the Swing platform. Each one is equal only to itself, so core keeps a UI
  * thread for each.
  */
 final class HostPlatform implements Platform {
@@ -67,6 +69,16 @@ final class HostPlatform implements Platform {
     @Override
     public TextMetrics textMetrics() {
         return this.platform.textMetrics();
+    }
+
+    @Override
+    public Scheduler scheduler() {
+        return this.eventThread ? this.platform.scheduler() : (millis, task) -> {
+            if (millis <= 0L) {
+                throw new IllegalArgumentException("A task's interval must be above 0 ms: " + millis);
+            }
+            return () -> { };
+        };
     }
 
     @Override

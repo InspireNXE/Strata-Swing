@@ -311,6 +311,28 @@ public final class SwingCanvas implements Canvas {
         }
         // Draw with the font the width was measured with, so spans side by side meet exactly
         final SwingFont font = this.fonts.font(style);
+        final float factor = this.fonts.scale(style, font);
+        if (factor == 1f) {
+            this.drawText(font, span, x, y, rightToLeft);
+            return;
+        }
+        // Another size draws the font under a scale, which Java2D renders from the outlines at that size
+        this.pushTranslation(x, y);
+        try {
+            this.pushScale(factor);
+            try {
+                this.drawText(font, span, 0f, 0f, rightToLeft);
+            } finally {
+                this.popTransform();
+            }
+        } finally {
+            this.popTransform();
+        }
+    }
+
+    private void drawText(final SwingFont font, final TextSpan span, final float x, final float y,
+                          final boolean rightToLeft) {
+        final TextStyle style = span.style();
         final float baseline = y + font.ascent(style);
         if (style.shadow()) {
             this.glyphs(font, span, x + 1f, baseline + 1f, shadowOf(style.color()), rightToLeft);

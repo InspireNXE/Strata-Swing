@@ -96,6 +96,16 @@ public final class AwtFont implements SwingFont {
         return new TextLayout(span.text(), this.font(span.style()), this.context);
     }
 
+    /**
+     * Returns the base font's point size, in UI units.
+     *
+     * @return the size
+     */
+    @Override
+    public float size() {
+        return this.fonts[Font.PLAIN].getSize2D();
+    }
+
     @Override
     public float width(final TextSpan span) {
         // FontMetrics rounds each character's advance; a layout keeps the fractional advances text is drawn with

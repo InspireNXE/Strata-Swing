@@ -23,16 +23,28 @@ import java.awt.Graphics2D;
 /**
  * A font the Swing adapter measures and draws text with. {@link SwingTextMetrics} holds one for normal text and one
  * for monospaced text, and {@link SwingCanvas} draws with the same font the text was measured with.
- * {@link AwtFont} draws AWT fonts; {@link BitmapFont} draws glyphs cut from images.
+ * {@link AwtFont} draws AWT fonts; {@link BitmapFont} draws glyphs cut from images. A font measures and draws at its
+ * own {@linkplain #size() size}, and the metrics scale it to the size a style asks for.
  *
  * <p>All values are in UI units. A span's width must be what drawing it advances, so spans drawn side by side meet
  * without gaps or overlaps, and the width of two spans together must be the sum of their widths. Only a span's
- * text and its style's bold, italic and monospace flags change what a font measures; color, underline,
+ * text and its style's bold, italic and monospace flags change what a font measures, never the style's size; color, underline,
  * strikethrough and shadow are the canvas's work. Implementations are used on the Swing event thread.</p>
  */
 public interface SwingFont {
     /**
-     * Returns how far drawing a span advances.
+     * Returns the size the font measures and draws at, in UI units: the height of its em square, as a point size is.
+     * {@link SwingTextMetrics} draws text of another size as this font scaled by the ratio of the two. The default is
+     * the line height of the default style, which suits a bitmap font.
+     *
+     * @return the size, positive
+     */
+    default float size() {
+        return this.lineHeight(TextStyle.DEFAULT);
+    }
+
+    /**
+     * Returns how far drawing a span advances at the font's own size.
      *
      * @param span the span; may be empty
      * @return the width, 0 for an empty span
